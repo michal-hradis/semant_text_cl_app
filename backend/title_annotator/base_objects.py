@@ -1,13 +1,19 @@
 import pydantic
 import datetime
+import uuid
+from fastapi_users import schemas
 
-# The application will work this way:
-# 1. Select a random RatingRequest which was not yet rated by the user and has ratings_to_go > 0
-# 3. For each title pair present to the user the chunk, the query and the two titles
-# 5. User selects the better title and can mark either title as irrelevant, gibberish or wrongfully marked as irrelevant
-# 6. Store the rating
-# 8. Repeat from step 1
 
+class UserRead(schemas.BaseUser[uuid.UUID]):
+    pass
+
+
+class UserCreate(schemas.BaseUserCreate):
+    pass
+
+
+class UserUpdate(schemas.BaseUserUpdate):
+    pass
 
 class TitleImport(pydantic.BaseModel):
     id: str                   # This is an ID of the title record

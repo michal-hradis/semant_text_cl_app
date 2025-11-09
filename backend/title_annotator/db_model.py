@@ -16,9 +16,6 @@ orm2dict = lambda r: {c.name: getattr(r, c.name) for c in r.__table__.columns}
 row2dict = lambda r: dict(r._mapping)
 
 
-class Base(DeclarativeBase):
-    pass
-
 class RatingRequest(Base):
     __tablename__ = 'rating_requests'
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)

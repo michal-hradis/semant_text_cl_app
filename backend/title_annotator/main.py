@@ -3,10 +3,17 @@ import logging
 import logging.config
 import traceback
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends, FastAPI
 from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+
+from title_annotator.database import User, init_db, DBError
+from title_annotator.base_objects import UserCreate, UserRead, UserUpdate
+from title_annotator.users import auth_backend, current_active_user, fastapi_users
+from title_annotator.config import config
+
+from contextlib import asynccontextmanager
 
 
 tags_metadata = [
@@ -20,29 +27,38 @@ tags_metadata = [
     }
 ]
 
-
-app = FastAPI(openapi_tags=tags_metadata, title="Scribble Sense", version="0.1.0", root_path=config.APP_URL_ROOT)
-
-
-@app.on_event("startup")
-async def startup():
-    logging.config.dictConfig(config.LOGGING_CONFIG)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Not needed if you setup a migration system like Alembic
     await init_db()
+    yield
 
 
-app.include_router(user_route, prefix="/api/user")
-app.include_router(document_route, prefix="/api/document")
-app.include_router(image_route, prefix="/api/image")
-app.include_router(authentication_route, prefix="/api")
-app.include_router(authentication_route, prefix="")
-app.include_router(news_route, prefix="/api/news")
-app.include_router(model_route, prefix="/api/model")
-app.include_router(job_route, prefix="/api/job")
-app.include_router(training_job_route, prefix="/api/training_job")
-app.include_router(import_route, prefix="/api/import")
-app.include_router(export_route, prefix="/api/export")
-app.include_router(notification_route, prefix="/api/notification")
-app.include_router(debug_route, prefix="/api/debug")
+app = FastAPI(openapi_tags=tags_metadata, title="Scribble Sense", version="0.1.0", lifespan=lifespan)  #, root_path=config.APP_URL_ROOT)
+
+app.include_router(
+    fastapi_users.get_auth_router(auth_backend), prefix="/auth/jwt", tags=["auth"]
+)
+app.include_router(
+    fastapi_users.get_register_router(UserRead, UserCreate),
+    prefix="/auth",
+    tags=["auth"],
+)
+app.include_router(
+    fastapi_users.get_reset_password_router(),
+    prefix="/auth",
+    tags=["auth"],
+)
+app.include_router(
+    fastapi_users.get_verify_router(UserRead),
+    prefix="/auth",
+    tags=["auth"],
+)
+app.include_router(
+    fastapi_users.get_users_router(UserRead, UserUpdate),
+    prefix="/users",
+    tags=["users"],
+)
 
 if os.path.isdir("scribble_sense/static"):
     app.mount("/", StaticFiles(directory="scribble_sense/static", html=True), name="static")
@@ -50,20 +66,11 @@ if os.path.isdir("scribble_sense/static"):
 
 @app.exception_handler(Exception)
 async def unicorn_exception_handler(request: Request, exc: Exception):
-    if config.INTERNAL_MAIL_SERVER is not None:
-        internal_mail_logger.critical(f'URL: {request.url}\n'
-                                      f'METHOD: {request.method}\n'
-                                      f'CLIENT: {request.client}\n\n'
-                                      f'ERROR: {exc}\n\n'
-                                      f'{traceback.format_exc()}',
-                                      extra={'subject': f'{config.MODE.upper()} {config.ADMIN_SERVER_NAME} - INTERNAL SERVER ERROR'})
     if isinstance(exc, DBError):
         # DBError exceptions are already logged when they are raised
         return JSONResponse(status_code=400, content={"message": str(exc)})
     else:
-        exception_logger.error(f'URL: {request.url}')
-        exception_logger.error(f'CLIENT: {request.client}')
-        exception_logger.exception(exc)
+        logging.error(f'URL: {request.url}, METHOD: {request.method}, CLIENT: {request.client}, ERROR: {exc}\n{traceback.format_exc()}')
         return Response(status_code=500)
 
 

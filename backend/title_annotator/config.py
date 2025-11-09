@@ -7,7 +7,7 @@ TRUE_VALUES = {"true", "1"}
 class Config():
     def __init__(self):
         self.DATABASE_URL = os.getenv("DATABASE_URL",
-                                      "sqlite+aiosqlite:///database.db")
+                                      "sqlite+aiosqlite:///database.sqlite")
 
         self.PRODUCTION = os.getenv(
             "PRODUCTION", str(False)).lower() in TRUE_VALUES
@@ -22,6 +22,11 @@ class Config():
         self.INVITE_TOKEN_FILE = os.getenv(
             "INVITE_TOKEN_FILE", "./invite_tokens.txt"
         )
+
+        self.ADMIN = os.getenv("ADMIN", "ihradis@fit.vutbr.cz")
+        self.ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
+
+        self.SECRET = os.getenv("SECRET", "XYZ123!@#JKLKL$$%^^&*()123WER_QWE")
 
 
 config = Config()
