@@ -15,12 +15,14 @@ class UserCreate(schemas.BaseUserCreate):
 class UserUpdate(schemas.BaseUserUpdate):
     pass
 
+
 class TitleImport(pydantic.BaseModel):
     id: str                   # This is an ID of the title record
     generated_title: str
     model: str
     query: str
     prompt: str
+
 
 class ChunkImport(pydantic.BaseModel):
     id: str                   # This is an ID of the chunk record
@@ -34,11 +36,15 @@ class ChunkImport(pydantic.BaseModel):
     document: str
     generated_titles: list[TitleImport]
 
+
 class RatedTitle(TitleImport):
     preferred: bool = False
-    is_irrelevant: bool = False
-    is_gibberish: bool = False
     is_relevant: bool = False
+    is_irrelevant: bool = False
+    is_hallucination: bool = False
+    is_gibberish: bool = False
+    is_long: bool = False
+
 
 class SingleRating(pydantic.BaseModel):
     titles: list[RatedTitle]
