@@ -7,21 +7,28 @@ Human-in-the-loop text classification app for creating benchmark labels.
 - Frontend: Quasar (Vue 3 + TypeScript)
 - DB: SQLite by default (`DATABASE_URL` can point to PostgreSQL)
 
-## Backend
+## Backend (dev)
 ```bash
 cd backend
 pip install -r requirements.txt
-python run.py
+PORT=8005 ALLOWED_ORIGIN=http://localhost:9005 python run.py
 ```
-Backend runs on port `8002` by default.
+Backend defaults to `http://localhost:8002` if `PORT` is not set.
 
-## Frontend
+## Frontend (dev)
 ```bash
 cd frontend
 npm install
-npm run dev
+API_URL=http://localhost:8005 quasar dev -p 9005 -h 0.0.0.0
 ```
-Frontend runs on port `9000` by default.
+`API_URL` is injected by Quasar build config (`build.env`) and used by axios boot file.
+
+## Frontend build with custom backend URL
+```bash
+cd frontend
+API_URL=http://api.example.com:8005 npm run build
+```
+The compiled app will call that API URL at runtime.
 
 ## Main API
 - `GET /api/tasks`
@@ -39,5 +46,15 @@ Frontend runs on port `9000` by default.
 - Task definitions are stored in DB and support single-choice or multi-choice labels.
 - Text uploads are JSONL; full row JSON is stored for downstream benchmarking/export.
 
+## Docker compose deployment
+```bash
+cd deploy
+docker compose up --build
+```
+- Frontend: `http://localhost:9000`
+- Backend: `http://localhost:8002`
 
-Frontend now includes a simple admin page for importing prompt tasks and uploading JSONL texts.
+Use `deploy/frontend.Dockerfile` build arg to set API URL:
+```bash
+docker build -f deploy/frontend.Dockerfile --build-arg API_URL=http://localhost:8002 -t text-classifier-frontend .
+```

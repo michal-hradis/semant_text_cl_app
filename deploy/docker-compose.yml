@@ -1,0 +1,22 @@
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: deploy/backend.Dockerfile
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:///database.sqlite
+      - PORT=8002
+      - ALLOWED_ORIGIN=http://localhost:9000
+    ports:
+      - "8002:8002"
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: deploy/frontend.Dockerfile
+      args:
+        API_URL: http://localhost:8002
+    ports:
+      - "9000:80"
+    depends_on:
+      - backend
