@@ -4,7 +4,9 @@
     <div class="q-mb-md">My total annotations: {{ myTotal }}</div>
     <div v-if="!textItem">No more texts.</div>
     <div v-else>
-      <q-card class="q-mb-md"><q-card-section>{{ textItem.text }}</q-card-section></q-card>
+      <q-card class="q-mb-md">
+        <q-card-section class="classified-text">{{ textItem.text }}</q-card-section>
+      </q-card>
       <div v-for="task in tasks" :key="task.id" class="q-mb-md">
         <div class="text-subtitle1">{{ task.name }}</div>
         <div class="text-caption text-grey-7 q-mb-xs">
@@ -88,3 +90,10 @@ const submit = async () => {
   await load();
 };
 </script>
+
+<style scoped>
+.classified-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+</style>
