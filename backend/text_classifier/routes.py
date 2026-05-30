@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Response
 from sqlalchemy import select
@@ -11,7 +12,6 @@ from text_classifier.database import User, get_async_session
 from text_classifier.db_model import Task
 from text_classifier.users import current_active_user
 from text_classifier.prompt_parser import load_prompts
-from pathlib import Path
 
 api_route = APIRouter()
 admin_route = APIRouter()
@@ -20,6 +20,13 @@ admin_route = APIRouter()
 @api_route.get('/tasks', response_model=list[base_objects.TaskDefinition])
 async def tasks(db: AsyncSession = Depends(get_async_session)):
     return await crud.list_enabled_tasks(db)
+
+
+@admin_route.get('/tasks', response_model=list[base_objects.TaskDefinition])
+async def admin_tasks(user: User = Depends(current_active_user), db: AsyncSession = Depends(get_async_session)):
+    if not user.is_superuser:
+        raise HTTPException(status_code=403)
+    return await crud.list_tasks(db)
 
 
 @api_route.get('/tasks/{task_id}', response_model=base_objects.TaskDefinition)
@@ -72,6 +79,17 @@ async def admin_task(task: base_objects.TaskDefinition, user: User = Depends(cur
     return Response(status_code=201)
 
 
+@admin_route.put('/tasks/{task_id}')
+async def admin_task_put(task_id: str, task: base_objects.TaskDefinition, user: User = Depends(current_active_user), db: AsyncSession = Depends(get_async_session)):
+    if not user.is_superuser:
+        raise HTTPException(status_code=403)
+    if task.id != task_id:
+        raise HTTPException(status_code=400, detail='Task id in path and body must match')
+    await crud.upsert_task(db, task)
+    await db.commit()
+    return Response(status_code=204)
+
+
 @admin_route.patch('/tasks/{task_id}')
 async def admin_task_patch(task_id: str, patch: base_objects.TaskStatePatch, user: User = Depends(current_active_user), db: AsyncSession = Depends(get_async_session)):
     if not user.is_superuser:
@@ -80,8 +98,7 @@ async def admin_task_patch(task_id: str, patch: base_objects.TaskStatePatch, use
     if not changed:
         raise HTTPException(status_code=404)
     await db.commit()
-
-
+    return Response(status_code=204)
 
 
 @admin_route.post('/tasks/import-prompts')
@@ -93,6 +110,8 @@ async def admin_import_prompts(user: User = Depends(current_active_user), db: As
         await crud.upsert_task(db, base_objects.TaskDefinition(**item))
     await db.commit()
     return {'imported': len(prompts)}
+
+
 @admin_route.post('/texts')
 async def admin_texts(lines: str = Body(..., media_type='text/plain'), user: User = Depends(current_active_user), db: AsyncSession = Depends(get_async_session)):
     if not user.is_superuser:

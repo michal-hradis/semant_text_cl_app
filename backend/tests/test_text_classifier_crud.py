@@ -39,3 +39,38 @@ def test_task_text_and_annotation_flow():
         await engine.dispose()
 
     asyncio.run(_run())
+
+
+def test_multi_choice_limits_and_unknown_classes_are_validated():
+    async def _run():
+        engine = create_async_engine('sqlite+aiosqlite:///:memory:')
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+        Session = async_sessionmaker(engine, expire_on_commit=False)
+        async with Session() as db:
+            task = TaskDefinition(
+                id='mode', name='Mode', description_md='desc', multi_choice=True, max_choices=2,
+                enabled=True,
+                classes=[
+                    TaskClass(id='record', label_en='Record', label_cs='záznamový'),
+                    TaskClass(id='description', label_en='Description', label_cs='popisný'),
+                ],
+            )
+            await upsert_task(db, task)
+            await db.commit()
+            tasks_map = {'mode': await db.get(Task, 'mode')}
+            payload = AnnotationSubmit(
+                text_id='t1',
+                annotations=[TaskAnnotation(task_id='mode', selected_classes=['record', 'bad'], start_time=datetime.utcnow(), end_time=datetime.utcnow())],
+            )
+            try:
+                await save_annotations(db, uuid4(), payload, tasks_map)
+            except ValueError as exc:
+                assert 'unknown classes: bad' in str(exc)
+            else:
+                raise AssertionError('Unknown class should fail')
+
+        await engine.dispose()
+
+    asyncio.run(_run())

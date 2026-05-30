@@ -29,9 +29,16 @@ async def set_task_state(db: AsyncSession, task_id: str, patch: base_objects.Tas
     return True
 
 
-async def list_enabled_tasks(db: AsyncSession) -> list[Task]:
-    rows = await db.execute(select(Task).where(Task.enabled.is_(True)).order_by(Task.id))
+async def list_tasks(db: AsyncSession, *, enabled_only: bool = False) -> list[Task]:
+    query = select(Task).order_by(Task.id)
+    if enabled_only:
+        query = query.where(Task.enabled.is_(True))
+    rows = await db.execute(query)
     return list(rows.scalars().all())
+
+
+async def list_enabled_tasks(db: AsyncSession) -> list[Task]:
+    return await list_tasks(db, enabled_only=True)
 
 
 async def get_next_text(db: AsyncSession, user_id, task_ids: list[str]):
@@ -55,13 +62,20 @@ async def get_next_text(db: AsyncSession, user_id, task_ids: list[str]):
 async def save_annotations(db: AsyncSession, user_id, payload: base_objects.AnnotationSubmit, tasks_map: dict[str, Task]):
     for ann in payload.annotations:
         task = tasks_map[ann.task_id]
+        selected = ann.selected_classes
+        allowed_classes = {item['id'] for item in task.classes}
+        unknown_classes = sorted(set(selected) - allowed_classes)
+        if unknown_classes:
+            raise ValueError(f"Task {task.id} has unknown classes: {', '.join(unknown_classes)}")
         if task.multi_choice:
-            if len(ann.selected_classes) > task.max_choices:
+            if not selected:
+                raise ValueError(f"Task {task.id} requires at least one choice")
+            if len(selected) > task.max_choices:
                 raise ValueError(f"Task {task.id} allows max {task.max_choices} choices")
-        elif len(ann.selected_classes) != 1:
+        elif len(selected) != 1:
             raise ValueError(f"Task {task.id} requires exactly one choice")
         db.add(Annotation(user_id=user_id, text_id=payload.text_id, task_id=ann.task_id,
-                          selected_classes=ann.selected_classes, start_time=ann.start_time, end_time=ann.end_time))
+                          selected_classes=selected, start_time=ann.start_time, end_time=ann.end_time))
 
 
 async def my_stats(db: AsyncSession, user_id):

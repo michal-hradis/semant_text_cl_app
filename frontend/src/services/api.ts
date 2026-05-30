@@ -24,6 +24,22 @@ class ApiService {
     return (await api.get<TaskDefinition[]>('/api/tasks')).data;
   }
 
+  async getAdminTasks(): Promise<TaskDefinition[]> {
+    return (await api.get<TaskDefinition[]>('/api/admin/tasks')).data;
+  }
+
+  async saveAdminTask(task: TaskDefinition): Promise<void> {
+    await api.put(`/api/admin/tasks/${task.id}`, task);
+  }
+
+  async importPromptTasks(): Promise<{ imported: number }> {
+    return (await api.post<{ imported: number }>('/api/admin/tasks/import-prompts')).data;
+  }
+
+  async uploadTextsJsonl(jsonl: string): Promise<void> {
+    await api.post('/api/admin/texts', jsonl, { headers: { 'Content-Type': 'text/plain' } });
+  }
+
   async getNextText(taskIds: string[]): Promise<NextTextResponse | null> {
     const response = await api.post<NextTextResponse>('/api/texts/next', { task_ids: taskIds }, { validateStatus: (s) => s === 200 || s === 204 });
     return response.status === 204 ? null : response.data;
