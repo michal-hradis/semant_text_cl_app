@@ -6,6 +6,7 @@
       <q-tab name="tasks" icon="assignment" label="Tasks" />
       <q-tab name="import" icon="upload_file" label="Import" />
       <q-tab name="texts" icon="article" label="Texts" />
+      <q-tab name="coverage" icon="donut_large" label="Coverage" />
       <q-tab name="reliability" icon="verified_user" label="Reliability" />
     </q-tabs>
 
@@ -167,6 +168,38 @@
         </q-table>
       </q-tab-panel>
 
+      <!-- ===================== COVERAGE TAB ===================== -->
+      <q-tab-panel name="coverage" class="q-pa-none">
+        <div class="row items-center q-mb-md">
+          <div class="text-subtitle1">Annotation coverage (unique annotators per active text)</div>
+          <q-space />
+          <q-btn flat icon="refresh" label="Refresh" :loading="loadingCoverage" @click="loadCoverage" />
+        </div>
+        <q-table
+          :rows="coverageRows"
+          :columns="coverageCols"
+          flat
+          bordered
+          :loading="loadingCoverage"
+          :rows-per-page-options="[0]"
+          hide-bottom
+          row-key="task_id"
+        >
+          <template #body-cell-progress="props">
+            <q-td :props="props" style="min-width:180px">
+              <q-linear-progress
+                :value="props.row.active_texts ? props.row.complete_texts / props.row.active_texts : 0"
+                size="14px" rounded color="positive" track-color="grey-3"
+              >
+                <div class="absolute-full flex flex-center text-caption">
+                  {{ props.row.active_texts ? Math.round(100 * props.row.complete_texts / props.row.active_texts) : 0 }}%
+                </div>
+              </q-linear-progress>
+            </q-td>
+          </template>
+        </q-table>
+      </q-tab-panel>
+
       <!-- ===================== RELIABILITY TAB ===================== -->
       <q-tab-panel name="reliability" class="q-pa-none">
         <div class="row items-center q-mb-md">
@@ -295,7 +328,7 @@
                   :min="0" :max="1" step="0.05" outlined dense />
               </div>
               <div class="col-12 col-sm-6 col-md-3">
-                <q-input v-model.number="editingTask.target_coverage" type="number" label="Target coverage (annotations/text)"
+                <q-input v-model.number="editingTask.target_coverage" type="number" label="Target unique annotators per text"
                   :min="1" outlined dense />
               </div>
             </div>
@@ -350,9 +383,9 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, computed } from 'vue';
+import { onMounted, ref, computed, watch } from 'vue';
 import { QTableColumn } from 'quasar';
-import { TaskDefinition, TextAnnotationEntry, TextItemResponse, UserReliabilityResponse } from 'src/types/api';
+import { TaskCoverage, TaskDefinition, TextAnnotationEntry, TextItemResponse, UserReliabilityResponse } from 'src/types/api';
 import { apiService } from 'src/services/api';
 
 // ---- Tabs ----
@@ -399,7 +432,7 @@ const blankTask = (): TaskDefinition => ({
   id: '', name: '', description_md: '', multi_choice: false, max_choices: 1, enabled: true,
   classes: [{ id: 'class_1', label_en: 'Class 1', label_cs: 'Třída 1' }],
   calib_ratio_initial: 0.30, calib_initial_count: 20, calib_ratio_ongoing: 0.10,
-  repeat_probability: 0.20, target_coverage: 3,
+  repeat_probability: 0.20, target_coverage: 4,
 });
 
 const openNewTask = () => {
@@ -614,6 +647,30 @@ const uploadTexts = async () => {
     uploading.value = false;
   }
 };
+
+// ---- Coverage tab ----
+const coverageRows = ref<TaskCoverage[]>([]);
+const loadingCoverage = ref(false);
+
+const coverageCols: QTableColumn[] = [
+  { name: 'task_name', label: 'Task', field: 'task_name', align: 'left', sortable: true },
+  { name: 'target', label: 'Target', field: 'target', align: 'right' },
+  { name: 'progress', label: 'Complete', field: 'complete_texts', align: 'left', sortable: true },
+  { name: 'complete_texts', label: 'Complete texts', field: 'complete_texts', align: 'right', sortable: true },
+  { name: 'partial_texts', label: 'Partial', field: 'partial_texts', align: 'right', sortable: true },
+  { name: 'untouched_texts', label: 'Untouched', field: 'untouched_texts', align: 'right', sortable: true },
+  { name: 'active_texts', label: 'Active texts', field: 'active_texts', align: 'right' },
+  { name: 'missing_annotations', label: 'Missing ann.', field: 'missing_annotations', align: 'right', sortable: true },
+  { name: 'pending_reservations', label: 'In progress', field: 'pending_reservations', align: 'right' },
+];
+
+const loadCoverage = async () => {
+  loadingCoverage.value = true;
+  try { coverageRows.value = await apiService.getAdminCoverage(); }
+  finally { loadingCoverage.value = false; }
+};
+
+watch(tab, (t) => { if (t === 'coverage') void loadCoverage(); });
 
 // ---- Reliability tab ----
 const irrData = ref<UserReliabilityResponse[]>([]);

@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import random
 import uuid
+from collections import defaultdict
 from datetime import datetime
 from typing import Sequence
 
@@ -12,6 +13,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from text_classifier import base_objects
 from text_classifier.database import User
 from text_classifier.db_model import Annotation, AnnotationType, Task, TextItem, UserReliability
+from text_classifier.reservations import ReservationStore, reservations
+
+import logging
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -208,61 +213,103 @@ async def _pick_calibration_text(
     return text_item, list(covered)
 
 
-async def _pick_repeat_text(db: AsyncSession, user_id, task_ids: list[str]) -> TextItem | None:
-    other_ann = (
-        select(Annotation.text_id, func.count(Annotation.id).label("cnt"))
-        .where(Annotation.task_id.in_(task_ids), Annotation.user_id != user_id,
+async def _annotators_per_text_task(
+    db: AsyncSession, task_ids,
+) -> dict[tuple[str, str], set]:
+    """Return {(text_id, task_id): {user_id, ...}} of distinct users with `user` annotations."""
+    rows = (await db.execute(
+        select(Annotation.text_id, Annotation.task_id, Annotation.user_id)
+        .where(Annotation.task_id.in_(list(task_ids)),
                Annotation.annotation_type == AnnotationType.user)
-        .group_by(Annotation.text_id)
-        .subquery()
-    )
-    user_seen = select(Annotation.text_id).where(
-        Annotation.user_id == user_id, Annotation.task_id.in_(task_ids)
-    ).subquery()
-    q = (
-        select(TextItem)
-        .join(other_ann, TextItem.id == other_ann.c.text_id)
-        .where(TextItem.id.not_in(select(user_seen.c.text_id)))
-        .where(TextItem.suspended.is_(False))
-        .order_by(other_ann.c.cnt.asc(), TextItem.id.asc())
-        .limit(10)
-    )
-    rows = (await db.execute(q)).scalars().all()
-    if not rows:
+        .distinct()
+    )).all()
+    result: dict[tuple[str, str], set] = defaultdict(set)
+    for text_id, task_id, user_id in rows:
+        result[(text_id, task_id)].add(user_id)
+    return result
+
+
+def _score_text(
+    text_id: str, user_id, targets: dict[str, int], annotators: dict[tuple[str, str], set],
+) -> int:
+    """Usefulness of `user_id` annotating `text_id` for the tasks in `targets`.
+
+    For every task still below its target of unique annotators (and not yet
+    annotated by this user) the text gets 1 + current count, so texts closer to
+    completion are preferred and texts useful for more of the user's tasks win.
+    """
+    score = 0
+    for task_id, target in targets.items():
+        users = annotators.get((text_id, task_id), ())
+        if user_id in users:
+            continue
+        n = len(users)
+        if n < target:
+            score += 1 + n
+    return score
+
+
+async def _pick_fill_text(
+    db: AsyncSession, user_id, task_ids: list[str], targets: dict[str, int], store: ReservationStore,
+) -> TextItem | None:
+    active_ids = (await db.execute(
+        select(TextItem.id).where(TextItem.suspended.is_(False))
+    )).scalars().all()
+    if not active_ids:
         return None
-    return random.choice(rows)
 
+    annotators = await _annotators_per_text_task(db, targets.keys())
+    for key, users in store.pending(exclude_user=user_id).items():
+        if key[1] in targets:
+            annotators[key] = annotators[key] | users
 
-async def _pick_new_text(db: AsyncSession, user_id, task_ids: list[str]) -> TextItem | None:
-    subq = (
-        select(Annotation.text_id, func.count(Annotation.id).label("coverage"))
-        .where(Annotation.task_id.in_(task_ids))
-        .group_by(Annotation.text_id)
-        .subquery()
-    )
-    user_done = select(Annotation.text_id).where(
-        Annotation.user_id == user_id, Annotation.task_id.in_(task_ids)
-    ).subquery()
-    q = (
-        select(TextItem)
-        .outerjoin(subq, TextItem.id == subq.c.text_id)
-        .where(TextItem.id.not_in(select(user_done.c.text_id)))
-        .where(TextItem.suspended.is_(False))
-        .order_by(func.coalesce(subq.c.coverage, 0).asc(), TextItem.id.asc())
-        .limit(1)
-    )
-    return (await db.execute(q)).scalar_one_or_none()
+    best_score, best = 0, []
+    for text_id in active_ids:
+        s = _score_text(text_id, user_id, targets, annotators)
+        if s > best_score:
+            best_score, best = s, [text_id]
+        elif s == best_score and s > 0:
+            best.append(text_id)
+
+    if not best:
+        # Everything the user can contribute to is saturated: fall back to a
+        # random text, preferring ones the user has not annotated yet.
+        seen = {
+            text_id for (text_id, task_id), users in annotators.items()
+            if task_id in task_ids and user_id in users
+        }
+        unseen = [t for t in active_ids if t not in seen]
+        best = unseen or list(active_ids)
+        logging.info(f"All texts saturated for user {user_id} and tasks {task_ids}; random fallback")
+
+    return await db.get(TextItem, random.choice(best))
 
 
 async def get_next_text(
-    db: AsyncSession, user_id, task_ids: list[str]
+    db: AsyncSession, user_id, task_ids: list[str], store: ReservationStore | None = None,
 ) -> tuple[TextItem | None, list[str]]:
-    """Returns (text_item, calibration_task_ids)."""
+    """ For a user and a set of task_ids, pick the next text to annotate.
+
+    Rule ("fill up to target"): every task has `target_coverage` = desired number
+    of unique annotators per text. Texts are scored by how much this user's
+    annotation helps reach the targets of the user's selected tasks (see
+    `_score_text`); the best-scoring text is chosen (random tie-break).
+    Annotations from other users that are currently being made (soft
+    reservations) count as if they were already done. If all texts are
+    saturated, a random text is served.
+
+    The picked text is soft-reserved for the user.
+
+    Returns (text_item, calibration_task_ids).
+    """
+    store = store if store is not None else reservations
+
     tasks: Sequence[Task] = (await db.execute(
         select(Task).where(Task.id.in_(task_ids))
     )).scalars().all()
-    task_map = {t.id: t for t in tasks}
+    targets = {t.id: t.target_coverage for t in tasks}
 
+    """ Calibration is currently disabled.
     calib_task_ids: list[str] = []
     for tid in task_ids:
         task = task_map.get(tid)
@@ -282,17 +329,48 @@ async def get_next_text(
         if text is not None:
             return text, covered
 
-    max_repeat_prob = max(
-        (task_map[tid].repeat_probability for tid in task_ids if tid in task_map),
-        default=0.2,
-    )
-    if random.random() < max_repeat_prob:
-        text = await _pick_repeat_text(db, user_id, task_ids)
-        if text is not None:
-            return text, []
-
-    text = await _pick_new_text(db, user_id, task_ids)
+    """
+    text = await _pick_fill_text(db, user_id, task_ids, targets, store)
+    if text is not None:
+        store.reserve(user_id, text.id, targets.keys())
+    logging.info(f"Picked text {text.id if text else None} for user {user_id} and tasks {task_ids}")
     return text, []
+
+
+async def coverage_stats(db: AsyncSession) -> list[dict]:
+    """Per enabled task: how many active texts reached the target of unique annotators."""
+    tasks = await list_tasks(db, enabled_only=True)
+    active_ids = (await db.execute(
+        select(TextItem.id).where(TextItem.suspended.is_(False))
+    )).scalars().all()
+    annotators = await _annotators_per_text_task(db, [t.id for t in tasks])
+    pending = reservations.pending()
+    result = []
+    for t in tasks:
+        complete = partial = 0
+        missing = 0
+        for text_id in active_ids:
+            n = len(annotators.get((text_id, t.id), ()))
+            if n >= t.target_coverage:
+                complete += 1
+            else:
+                missing += t.target_coverage - n
+                if n > 0:
+                    partial += 1
+        result.append({
+            'task_id': t.id,
+            'task_name': t.name,
+            'target': t.target_coverage,
+            'active_texts': len(active_ids),
+            'complete_texts': complete,
+            'partial_texts': partial,
+            'untouched_texts': len(active_ids) - complete - partial,
+            'missing_annotations': missing,
+            'pending_reservations': sum(
+                len(u) for (txt, tid), u in pending.items() if tid == t.id
+            ),
+        })
+    return result
 
 
 # ---------------------------------------------------------------------------

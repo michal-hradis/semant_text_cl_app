@@ -15,6 +15,7 @@ from text_classifier.database import User, get_async_session
 from text_classifier.db_model import AnnotationType, Task
 from text_classifier.users import current_active_user
 from text_classifier.prompt_parser import load_prompts
+from text_classifier.reservations import reservations
 
 api_route = APIRouter()
 admin_route = APIRouter()
@@ -60,6 +61,7 @@ async def annotations(payload: base_objects.AnnotationSubmit, user: User = Depen
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     await db.commit()
+    reservations.release(user.id)
     return {'points': points}
 
 
@@ -266,6 +268,16 @@ async def admin_patch_annotation(
 # ---------------------------------------------------------------------------
 # Admin: IRR / reliability
 # ---------------------------------------------------------------------------
+
+@admin_route.get('/coverage', response_model=list[base_objects.TaskCoverage])
+async def admin_coverage(
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_async_session),
+):
+    if not user.is_superuser:
+        raise HTTPException(status_code=403)
+    return await crud.coverage_stats(db)
+
 
 @admin_route.get('/irr')
 async def admin_get_irr(

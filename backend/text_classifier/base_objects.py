@@ -145,6 +145,18 @@ class GlobalStats(BaseModel):
     per_task: list[TaskStats]
 
 
+class TaskCoverage(BaseModel):
+    task_id: str
+    task_name: str
+    target: int
+    active_texts: int
+    complete_texts: int
+    partial_texts: int
+    untouched_texts: int
+    missing_annotations: int
+    pending_reservations: int
+
+
 class UserReliabilityResponse(BaseModel):
     user_id: str
     display_name: str

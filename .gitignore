@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Databases and backups
+*.sqlite
+*.sqlite3
+*.db
+backend/db.bak/
+
+# Built frontend served by the backend
+backend/static/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.quasar/
+
+# Data files (keep the sample)
+*.jsonl
+!example.jsonl
+
+# Environment
+.env

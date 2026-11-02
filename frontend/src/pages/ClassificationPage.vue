@@ -130,14 +130,14 @@
               v-if="!currentTask.multi_choice"
               v-model="(answers as Record<string, string>)[currentTask.id]"
               :val="cls.id"
-              :label="cls.label_en"
+              :label="cls.label_cs"
               dense
             />
             <q-checkbox
               v-else
               v-model="(answers as Record<string, string[]>)[currentTask.id]"
               :val="cls.id"
-              :label="cls.label_en"
+              :label="cls.label_cs"
               dense
               @update:model-value="limitMultiChoice(currentTask)"
             />
@@ -196,7 +196,7 @@
               </q-item-section>
               <q-item-section>
                 <q-item-label :class="i === currentTaskIndex ? 'text-primary text-weight-medium' : ''">{{ task.name }}</q-item-label>
-                <q-item-label caption>{{ selectedClasses(task).join(', ') || (i < currentTaskIndex ? 'not answered' : (i === currentTaskIndex ? 'in progress…' : '')) }}</q-item-label>
+                <q-item-label caption>{{ classLabels(task, selectedClasses(task)).join(', ') || (i < currentTaskIndex ? 'not answered' : (i === currentTaskIndex ? 'in progress…' : '')) }}</q-item-label>
               </q-item-section>
             </q-item>
           </q-list>
@@ -242,6 +242,9 @@ const selectedClasses = (task: TaskDefinition): string[] => {
   if (Array.isArray(value)) return value;
   return value ? [value] : [];
 };
+
+const classLabels = (task: TaskDefinition | undefined, ids: string[]): string[] =>
+  ids.map((id) => task?.classes.find((c) => c.id === id)?.label_cs ?? id);
 
 const currentTaskAnswered = computed(() => {
   if (!currentTask.value) return false;
@@ -344,7 +347,7 @@ const submit = async () => {
           const submitted = (Array.isArray(submittedAnswers[tid]) ? submittedAnswers[tid] : submittedAnswers[tid] ? [submittedAnswers[tid]] : []) as string[];
           const gt = gtMap[tid] ?? [];
           const match = submitted.length === gt.length && submitted.every((c) => gt.includes(c));
-          return { task_id: tid, task_name: task?.name ?? tid, submitted, gt, match };
+          return { task_id: tid, task_name: task?.name ?? tid, submitted: classLabels(task, submitted), gt: classLabels(task, gt), match };
         });
       if (calibFeedback.value.length > 0) return; // wait for user to click Continue
     }

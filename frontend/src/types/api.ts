@@ -103,6 +103,18 @@ export interface TaskStats {
   count: number;
 }
 
+export interface TaskCoverage {
+  task_id: string;
+  task_name: string;
+  target: number;
+  active_texts: number;
+  complete_texts: number;
+  partial_texts: number;
+  untouched_texts: number;
+  missing_annotations: number;
+  pending_reservations: number;
+}
+
 export interface UserReliabilityResponse {
   user_id: string;
   display_name: string;

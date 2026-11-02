@@ -4,6 +4,8 @@
 
 **semant_text_cl_app** collects human text-classification annotations for benchmarking AI classifiers. Annotators log in, select up to 6 tasks, and label texts one by one.
 
+**Start with [docs/README.md](docs/README.md)** (documentation index). Use the terms in [docs/glossary.md](docs/glossary.md) in code, docs and logs.
+
 - **Backend**: Python (FastAPI, SQLAlchemy async, fastapi-users, Pydantic v2)
 - **Frontend**: Quasar v2 (Vue 3 Composition API, TypeScript, Pinia, Axios)
 - **Database**: SQLite (dev) / PostgreSQL (prod via `DATABASE_URL`)
@@ -18,15 +20,18 @@ backend/
   text_classifier/      Main package
     config.py           Settings from env vars
     database.py         Async SQLAlchemy engine + User table + DBError
-    db_model.py         ORM models (Task, TextItem, Annotation)
+    db_model.py         ORM models (Task, TextItem, Annotation, UserReliability)
     base_objects.py     Pydantic v2 request/response schemas
     crud.py             Database access functions
     routes.py           FastAPI routers (api_route, admin_route)
     main.py             App factory + middleware
     users.py            fastapi-users configuration
     prompt_parser.py    Markdown → task definition parser
+    reservations.py     In-memory soft reservations for the sampler
+    reliability.py      Annotator reliability job
   tests/                pytest test suite
   run.py                Entry-point (uvicorn)
+  *.py                  Maintenance scripts (see docs/operations.md)
   requirements.txt
 
 frontend/
@@ -35,10 +40,12 @@ frontend/
     components/         Reusable UI components
     services/api.ts     Axios API wrapper (all API calls go here)
     types/api.ts        TypeScript interfaces mirroring backend schemas
-    stores/             Pinia stores (one per domain: auth, tasks, annotations)
+    stores/             Pinia stores (currently auth only)
     router/routes.ts    Vue Router config
 
-prompts/                Classification task definitions (Markdown, one per task)
+prompts/                Prompt files: English task definitions (Markdown, one per task)
+docs/                   Current-state documentation; docs/history/ = superseded plans
+deploy/                 Dockerfiles, docker-compose
 logs/                   Change summaries (see below)
 example.jsonl           Sample text upload file
 ```
@@ -51,21 +58,10 @@ example.jsonl           Sample text upload file
 ```bash
 cd backend
 pip install -r requirements.txt
-python run.py          # default: http://localhost:8002
+python run.py          # default: http://localhost:8003
 ```
 
-Key env vars (all optional):
-
-| Variable | Default | Description |
-|---|---|---|
-| `DATABASE_URL` | `sqlite+aiosqlite:///database.sqlite` | SQLAlchemy async URL |
-| `PRODUCTION` | `false` | When true, CORS middleware is omitted (use reverse proxy) |
-| `PORT` | `8002` | uvicorn listen port |
-| `ALLOWED_ORIGIN` | `http://pchradis2.fit.vutbr.cz:9005` | Allowed CORS origin in dev |
-| `JWT_PRIVATE_KEY` | `supersecret` | **Change in production** |
-| `SECRET` | `XYZ123…` | fastapi-users secret — **change in production** |
-| `ADMIN` | `admin@example.com` | Initial superuser email |
-| `ADMIN_PASSWORD` | `admin123` | **Change in production** |
+Environment variables: [docs/operations.md](docs/operations.md#configuration).
 
 ### Frontend
 ```bash
@@ -102,7 +98,7 @@ All new backend features must include tests. Use a temporary SQLite database for
 - Vue 3 Composition API (`<script setup>`); no Options API.
 - All API types in `src/types/api.ts` must mirror backend schemas.
 - API calls through `src/services/api.ts` only — no direct `axios` calls from components.
-- One Pinia store per domain (auth, tasks, annotations).
+- One Pinia store per domain when state is shared across pages (currently auth only).
 - Quasar components preferred over raw HTML.
 
 ### General
@@ -113,9 +109,9 @@ All new backend features must include tests. Use a temporary SQLite database for
 
 ## Documentation
 
-- Public-facing API changes must be reflected in `frontend/openapi.json` (regenerate from `/openapi.json`).
-- Significant changes should update `rebuild_task.md` and/or `docs/`.
-- Each classification task lives in `prompts/{task_id}.md`.
+- Public-facing API changes must be reflected in `frontend/openapi.json` (regenerate from `/openapi.json`) and `docs/api_reference.md`.
+- Changes to behaviour, schema or operations must update the matching file in `docs/` (see [docs/README.md](docs/README.md)). `docs/` describes the current state; `logs/` records changes.
+- New terms go to `docs/glossary.md` first.
 
 ---
 
@@ -141,37 +137,12 @@ Contents: what changed, why, decisions made. The `logs/` directory is committed.
 
 ---
 
-## Task Definition Format
+## Data Rules
 
-```json
-{
-  "id": "style",
-  "name": "Style",
-  "description_md": "# Task\n…",
-  "multi_choice": true,
-  "max_choices": 2,
-  "enabled": true,
-  "classes": [
-    {"id": "formal", "label_en": "Formal", "label_cs": "formální"}
-  ]
-}
-```
-
-Upload via `POST /api/admin/tasks` or use the Admin page import button.
-
----
-
-## Text Upload Format (JSONL)
-
-Required fields per line:
-
-| Field | Type | Notes |
-|---|---|---|
-| `id` | string | Unique text identifier; duplicates are upserted |
-| `text` | string | Passage shown to annotators |
-| `language` | string | ISO 639-3 code (e.g. `ces`, `eng`) |
-
-All other fields are stored as raw JSON for export and benchmarking.
+- The DB is authoritative for tasks. Prompt import (`POST /api/admin/tasks/import-prompts`) overwrites DB task content: [docs/task_definitions.md](docs/task_definitions.md#sources-of-truth).
+- Annotations store class IDs. Never rename or remove a class ID after annotation has started.
+- Back up the DB before manual edits: [docs/operations.md](docs/operations.md#backups).
+- Formats: tasks [docs/task_definitions.md](docs/task_definitions.md), texts / GT / LLM uploads [docs/operations.md](docs/operations.md#admin-data-uploads).
 
 ---
 
@@ -180,7 +151,8 @@ All other fields are stored as raw JSON for export and benchmarking.
 | Decision | Choice | Reason |
 |---|---|---|
 | Task selection UX | User picks ≤ 6 tasks; texts served one-by-one | Manageable cognitive load |
-| Task storage | DB (parsed from `.md` → JSON → uploaded) | Runtime admin control |
+| Task storage | DB (imported from `prompts/*.md`, then edited in the DB) | Runtime admin control |
+| Sampling | Fill-to-target with in-memory reservations | Even coverage; single worker |
 | Text storage | Full JSON blob + extracted fields | Preserves AI labels for benchmarking |
 | Duplicate upload | Upsert by `id` | Safe re-import |
 | Registration | Open | Low friction for annotators |

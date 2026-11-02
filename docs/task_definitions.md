@@ -1,71 +1,66 @@
-# Task Definitions and Prompt Import
+# Task Definitions
 
-Task definitions are the central configuration object for annotation. A task controls the annotator-facing name, markdown prompt, allowed class choices, whether multiple classes may be selected, and the maximum number of selected classes.
+A task holds: ID, name, task prompt, classes, choice limits, enabled flag and sampling settings. Schema: `TaskDefinition` in `backend/text_classifier/base_objects.py`. Terms: [glossary.md](glossary.md).
 
-## Canonical task JSON
+## Sources of truth
 
-```json
-{
-  "id": "style",
-  "name": "Style",
-  "description_md": "# Task\nCharacterise the register/style…",
-  "multi_choice": true,
-  "max_choices": 2,
-  "enabled": true,
-  "classes": [
-    {"id": "formal", "label_en": "Formal", "label_cs": "formální", "description": "elevated, conventionally polished language"},
-    {"id": "neutral", "label_en": "Neutral", "label_cs": "neutrální", "description": null}
-  ]
-}
+| Source | Language | Class references | Audience |
+|---|---|---|---|
+| `prompts/{task_id}.md` (prompt file) | English | class IDs (`formal`) | LLM classifiers; initial import |
+| DB `tasks` row | Czech `description_md` | Czech labels (`formální`) | annotators |
+
+**The DB is authoritative for annotation.** The Czech task prompts and labels were edited in the DB and exist nowhere else.
+
+**Import overwrites.** `POST /api/admin/tasks/import-prompts` (Admin → Import) upserts every prompt file and replaces `name`, `description_md`, `classes`, `multi_choice`, `max_choices` and `enabled`. Running it replaces the Czech DB content with the English prompt files. To change a single task, edit it in Admin → Tasks or `POST /api/admin/tasks`.
+
+The class IDs in the prompt files and in the DB must stay identical, so that LLM output can be compared with human annotations.
+
+## Labels and prompts
+
+- `label_cs`: human-readable Czech words with spaces, no underscores (e.g. `závislý na kontextu`).
+- `label_en`: English; the importer derives it from the class ID.
+- The task prompt refers to each class by its exact `label_cs` in backticks, in the class list and in the rules. No inflected forms, no „…“ quotes.
+- The classification page (`ClassificationPage.vue`) shows `label_cs` on the radio buttons and checkboxes, in the summary panel and in the calibration feedback. `label_en` is shown only in the admin task editor.
+
+Check that every label appears in its task prompt:
+
+```bash
+cd backend && python3 - <<'EOF'
+import sqlite3, json
+c = sqlite3.connect('database.sqlite')
+for tid, cls, md in c.execute('select id, classes, description_md from tasks'):
+    for k in json.loads(cls):
+        if '_' in k['label_cs'] or f"`{k['label_cs']}`" not in md:
+            print(tid, k['label_cs'])
+EOF
 ```
 
-## Markdown prompt format
+## Prompt file format (import)
 
-Each prompt in `prompts/{task_id}.md` should contain a classes section. The importer accepts either heading:
+Parser: `backend/text_classifier/prompt_parser.py`.
 
-- `# Classes`
-- `# Possible classes`
+- Task ID = file stem.
+- Name = the text after `# Task -` / `# Task:`; otherwise the humanized file stem.
+- Classes are read from the section headed `# Classes` or `# Possible classes`, up to the next `#` heading. The section heading must use a single `#`.
+- Class line: ``- `class_id` — description`` or ``- `class_id` / `label_cs` — description``. If `label_cs` is missing, the class ID is used.
+- `multi_choice = true`, `max_choices = 2` if the text contains one of: `one or two class labels`, `optionally choose a second`, `choose up to two`, `select up to two`, `multiple classes`, `multiple options`. Otherwise single choice.
+- `enabled = true`; sampling settings get schema defaults.
 
-Class lines must use backticked IDs. Czech labels are optional and can be written after a slash.
+## Validation
 
-```markdown
-# Task - text mode / slohový postup
-- Choose one primary class.
-- Optionally choose a second class only if it is clearly present.
+At save (`TaskDefinition`):
+- at least one class;
+- single choice ⇒ `max_choices = 1`;
+- `max_choices ≤ len(classes)`.
 
-# Classes
-- `narration` / `vyprávěcí` — recounts events, actions, or happenings over time
-- `description` / `popisný` — depicts persons, objects, places, situations, or qualities
-- `uncertain` — cannot be determined reliably
-```
+At submit (`crud.save_annotations`):
+- every selected class ID exists in the task;
+- single choice: exactly one class;
+- multi choice: from 1 to `max_choices` classes;
+- the task is enabled.
 
-The imported classes become:
+## Rules
 
-| Markdown | Imported field |
-|---|---|
-| Backticked class ID | `classes[].id` |
-| Humanized class ID | `classes[].label_en` |
-| Backticked label after `/` | `classes[].label_cs` |
-| Missing Czech label | Falls back to the class ID |
-| Text after `—` | `classes[].description` (shown as tooltip; `null` if absent) |
-
-## Single-choice versus multi-choice
-
-The importer marks a task as multi-choice when prompt text contains instructions such as:
-
-- `one or two class labels`
-- `Optionally choose a second class`
-- `choose up to two`
-- `multiple classes`
-
-Imported multi-choice tasks currently default to `max_choices: 2`. All other tasks are imported as single-choice with `max_choices: 1`.
-
-Administrators can adjust this in the web application after importing prompts.
-
-## Validation rules
-
-- A task must have at least one class choice.
-- Single-choice tasks must have `max_choices = 1`.
-- `max_choices` cannot exceed the number of available class choices.
-- Annotator submissions must select only class IDs present in the task definition.
-- Multi-choice submissions must include at least one class and no more than `max_choices` classes.
+- Never rename or remove a class ID after annotation has started. Add a new class instead.
+- Disable a task rather than delete it.
+- Before bulk edits, back up the DB ([operations.md](operations.md#backups)).

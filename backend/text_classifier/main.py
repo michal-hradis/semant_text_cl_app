@@ -1,3 +1,6 @@
+import logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+
 import asyncio
 from contextlib import asynccontextmanager
 
@@ -10,6 +13,9 @@ from text_classifier.config import config
 from text_classifier.database import Base, engine, get_async_session
 from text_classifier.routes import admin_route, api_route
 from text_classifier.users import auth_backend, fastapi_users, get_user_db, get_user_manager
+
+from fastapi.staticfiles import StaticFiles
+import os
 
 _RELIABILITY_INTERVAL_SECONDS = 30 * 60  # 30 minutes
 
@@ -65,3 +71,13 @@ app.include_router(fastapi_users.get_users_router(UserRead, UserUpdate), prefix=
 
 if not config.PRODUCTION:
     app.add_middleware(CORSMiddleware, allow_origins=[config.ALLOWED_ORIGIN], allow_credentials=True, allow_methods=['*'], allow_headers=['*'])
+
+if os.path.isdir(config.STATIC_PATH):
+    logging.info(f"Serving static files from '{config.STATIC_PATH}' directory")
+    print(f"Serving static files from '{config.STATIC_PATH}' directory")
+    app.mount("/", StaticFiles(directory=config.STATIC_PATH,
+              html=True), name="static")
+else:
+    logging.warning(
+        f"'{config.STATIC_PATH}' directory not found. Static files will not be served.")
+    print(f"'{config.STATIC_PATH}' directory not found. Static files will not be served.")

@@ -9,6 +9,7 @@ from sqlalchemy.dialects.sqlite import JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
 from text_classifier.database import Base
+import random
 
 
 class AnnotationType(str, enum.Enum):
@@ -43,11 +44,13 @@ class TextItem(Base):
     language: Mapped[str] = mapped_column(String, nullable=False)
     raw_json: Mapped[dict] = mapped_column(JSON, nullable=False)
     suspended: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default='0')
+    random_order: Mapped[float] = mapped_column(Float, default=random.random, nullable=False, index=True)
 
 
 class Annotation(Base):
     __tablename__ = "annotations"
-    __table_args__ = (UniqueConstraint("user_id", "text_id", "task_id", "annotation_type", name="uq_annotation_user_text_task_type"),)
+    # Single person can annotate single text multiple times - this is not a problem.
+    #__table_args__ = (UniqueConstraint("user_id", "text_id", "task_id", "annotation_type", name="uq_annotation_user_text_task_type"),)
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("user.id"), nullable=False)

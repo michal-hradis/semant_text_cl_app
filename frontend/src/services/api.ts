@@ -1,7 +1,7 @@
 import { api } from 'boot/axios';
 import {
   AnnotationSubmit, BearerResponse, GlobalStats, LeaderboardEntry, LoginRequest,
-  MyStats, NextTextResponse, TaskDefinition, TextAnnotationEntry, TextListResponse,
+  MyStats, NextTextResponse, TaskCoverage, TaskDefinition, TextAnnotationEntry, TextListResponse,
   UserCreate, UserRead, UserReliabilityResponse,
 } from 'src/types/api';
 
@@ -107,6 +107,10 @@ class ApiService {
 
   async uploadLlmAnnotations(jsonl: string): Promise<{ imported: number }> {
     return (await api.post<{ imported: number }>('/api/admin/llm-annotations', jsonl, { headers: { 'Content-Type': 'text/plain' } })).data;
+  }
+
+  async getAdminCoverage(): Promise<TaskCoverage[]> {
+    return (await api.get<TaskCoverage[]>('/api/admin/coverage')).data;
   }
 
   async getAdminIrr(): Promise<UserReliabilityResponse[]> {
