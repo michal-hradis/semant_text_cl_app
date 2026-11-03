@@ -83,9 +83,68 @@ class TaskAnnotation(BaseModel):
     end_time: datetime
 
 
+MAX_SESSION_EVENTS = 5000
+
+
+class InteractionEvent(BaseModel):
+    """One annotator action during an annotation session; t_ms is relative to client_started_at."""
+    type: str = Field(min_length=1, max_length=40)
+    t_ms: int = Field(ge=0)
+    task_id: str | None = Field(default=None, max_length=200)
+    class_id: str | None = Field(default=None, max_length=200)
+
+
+class AnnotationSessionSubmit(BaseModel):
+    id: uuid.UUID
+    client_started_at: datetime
+    events: list[InteractionEvent] = Field(default_factory=list, max_length=MAX_SESSION_EVENTS)
+
+
 class AnnotationSubmit(BaseModel):
     text_id: str
     annotations: list[TaskAnnotation]
+    session: AnnotationSessionSubmit | None = None
+
+
+class VoiceCommentConfig(BaseModel):
+    enabled: bool
+    max_seconds: int
+    languages: list[str]
+
+
+class VoiceCommentCreated(BaseModel):
+    id: str
+    transcription_status: str
+
+
+class VoiceCommentEntry(BaseModel):
+    id: str
+    language: str
+    mime_type: str
+    size_bytes: int
+    start_ms: int
+    end_ms: int
+    created_at: datetime
+    transcription_status: str
+    transcription_attempts: int
+    transcription_error: str | None
+    transcription_model: str | None
+    transcript: str | None
+    transcript_segments: list[dict] | None
+    transcribed_at: datetime | None
+
+
+class AnnotationSessionEntry(BaseModel):
+    session_id: str
+    user_id: str
+    display_name: str
+    text_id: str
+    task_ids: list[str]
+    client_started_at: datetime
+    submitted_at: datetime
+    events: list[InteractionEvent]
+    annotations: list['TextAnnotationEntry']
+    voice_comment: VoiceCommentEntry | None
 
 
 class AnnotationTypeValue(BaseModel):

@@ -357,6 +357,72 @@
                 }
             }
         },
+        "/api/voice-comments/config": {
+            "get": {
+                "summary": "Voice Comment Config",
+                "operationId": "voice_comment_config_api_voice_comments_config_get",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/VoiceCommentConfig"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "OAuth2PasswordBearer": []
+                    }
+                ]
+            }
+        },
+        "/api/voice-comments": {
+            "post": {
+                "summary": "Upload Voice Comment",
+                "operationId": "upload_voice_comment_api_voice_comments_post",
+                "requestBody": {
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Body_upload_voice_comment_api_voice_comments_post"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "201": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/VoiceCommentCreated"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "OAuth2PasswordBearer": []
+                    }
+                ]
+            }
+        },
         "/api/admin/tasks": {
             "get": {
                 "summary": "Admin Tasks",
@@ -994,6 +1060,135 @@
                 ]
             }
         },
+        "/api/admin/texts/{text_id}/sessions": {
+            "get": {
+                "summary": "Admin Get Text Sessions",
+                "operationId": "admin_get_text_sessions_api_admin_texts__text_id__sessions_get",
+                "security": [
+                    {
+                        "OAuth2PasswordBearer": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "text_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "title": "Text Id"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/AnnotationSessionEntry"
+                                    },
+                                    "title": "Response Admin Get Text Sessions Api Admin Texts  Text Id  Sessions Get"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/voice-comments/{voice_comment_id}/audio": {
+            "get": {
+                "summary": "Admin Get Voice Audio",
+                "operationId": "admin_get_voice_audio_api_admin_voice_comments__voice_comment_id__audio_get",
+                "security": [
+                    {
+                        "OAuth2PasswordBearer": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "voice_comment_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "title": "Voice Comment Id"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/voice-comments/{voice_comment_id}/retranscribe": {
+            "post": {
+                "summary": "Admin Retranscribe Voice Comment",
+                "operationId": "admin_retranscribe_voice_comment_api_admin_voice_comments__voice_comment_id__retranscribe_post",
+                "security": [
+                    {
+                        "OAuth2PasswordBearer": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "voice_comment_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "title": "Voice Comment Id"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Successful Response"
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/auth/jwt/login": {
             "post": {
                 "tags": [
@@ -1458,6 +1653,109 @@
     },
     "components": {
         "schemas": {
+            "AnnotationSessionEntry": {
+                "properties": {
+                    "session_id": {
+                        "type": "string",
+                        "title": "Session Id"
+                    },
+                    "user_id": {
+                        "type": "string",
+                        "title": "User Id"
+                    },
+                    "display_name": {
+                        "type": "string",
+                        "title": "Display Name"
+                    },
+                    "text_id": {
+                        "type": "string",
+                        "title": "Text Id"
+                    },
+                    "task_ids": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "title": "Task Ids"
+                    },
+                    "client_started_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "title": "Client Started At"
+                    },
+                    "submitted_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "title": "Submitted At"
+                    },
+                    "events": {
+                        "items": {
+                            "$ref": "#/components/schemas/InteractionEvent"
+                        },
+                        "type": "array",
+                        "title": "Events"
+                    },
+                    "annotations": {
+                        "items": {
+                            "$ref": "#/components/schemas/TextAnnotationEntry"
+                        },
+                        "type": "array",
+                        "title": "Annotations"
+                    },
+                    "voice_comment": {
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/VoiceCommentEntry"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "session_id",
+                    "user_id",
+                    "display_name",
+                    "text_id",
+                    "task_ids",
+                    "client_started_at",
+                    "submitted_at",
+                    "events",
+                    "annotations",
+                    "voice_comment"
+                ],
+                "title": "AnnotationSessionEntry"
+            },
+            "AnnotationSessionSubmit": {
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "title": "Id"
+                    },
+                    "client_started_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "title": "Client Started At"
+                    },
+                    "events": {
+                        "items": {
+                            "$ref": "#/components/schemas/InteractionEvent"
+                        },
+                        "type": "array",
+                        "maxItems": 5000,
+                        "title": "Events"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "id",
+                    "client_started_at"
+                ],
+                "title": "AnnotationSessionSubmit"
+            },
             "AnnotationSubmit": {
                 "properties": {
                     "text_id": {
@@ -1470,6 +1768,16 @@
                         },
                         "type": "array",
                         "title": "Annotations"
+                    },
+                    "session": {
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/AnnotationSessionSubmit"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
                     }
                 },
                 "type": "object",
@@ -1573,6 +1881,41 @@
                 ],
                 "title": "Body_auth_jwt_login_auth_jwt_login_post"
             },
+            "Body_upload_voice_comment_api_voice_comments_post": {
+                "properties": {
+                    "session_id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "title": "Session Id"
+                    },
+                    "language": {
+                        "type": "string",
+                        "title": "Language"
+                    },
+                    "start_ms": {
+                        "type": "integer",
+                        "title": "Start Ms"
+                    },
+                    "end_ms": {
+                        "type": "integer",
+                        "title": "End Ms"
+                    },
+                    "audio": {
+                        "type": "string",
+                        "contentMediaType": "application/octet-stream",
+                        "title": "Audio"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "session_id",
+                    "language",
+                    "start_ms",
+                    "end_ms",
+                    "audio"
+                ],
+                "title": "Body_upload_voice_comment_api_voice_comments_post"
+            },
             "ErrorModel": {
                 "properties": {
                     "detail": {
@@ -1629,6 +1972,52 @@
                 },
                 "type": "object",
                 "title": "HTTPValidationError"
+            },
+            "InteractionEvent": {
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "maxLength": 40,
+                        "minLength": 1,
+                        "title": "Type"
+                    },
+                    "t_ms": {
+                        "type": "integer",
+                        "minimum": 0.0,
+                        "title": "T Ms"
+                    },
+                    "task_id": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "maxLength": 200
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Task Id"
+                    },
+                    "class_id": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "maxLength": 200
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Class Id"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "type",
+                    "t_ms"
+                ],
+                "title": "InteractionEvent",
+                "description": "One annotator action during an annotation session; t_ms is relative to client_started_at."
             },
             "LeaderboardEntry": {
                 "properties": {
@@ -2330,6 +2719,169 @@
                     "type"
                 ],
                 "title": "ValidationError"
+            },
+            "VoiceCommentConfig": {
+                "properties": {
+                    "enabled": {
+                        "type": "boolean",
+                        "title": "Enabled"
+                    },
+                    "max_seconds": {
+                        "type": "integer",
+                        "title": "Max Seconds"
+                    },
+                    "languages": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "title": "Languages"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "enabled",
+                    "max_seconds",
+                    "languages"
+                ],
+                "title": "VoiceCommentConfig"
+            },
+            "VoiceCommentCreated": {
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "title": "Id"
+                    },
+                    "transcription_status": {
+                        "type": "string",
+                        "title": "Transcription Status"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "id",
+                    "transcription_status"
+                ],
+                "title": "VoiceCommentCreated"
+            },
+            "VoiceCommentEntry": {
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "title": "Id"
+                    },
+                    "language": {
+                        "type": "string",
+                        "title": "Language"
+                    },
+                    "mime_type": {
+                        "type": "string",
+                        "title": "Mime Type"
+                    },
+                    "size_bytes": {
+                        "type": "integer",
+                        "title": "Size Bytes"
+                    },
+                    "start_ms": {
+                        "type": "integer",
+                        "title": "Start Ms"
+                    },
+                    "end_ms": {
+                        "type": "integer",
+                        "title": "End Ms"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "title": "Created At"
+                    },
+                    "transcription_status": {
+                        "type": "string",
+                        "title": "Transcription Status"
+                    },
+                    "transcription_attempts": {
+                        "type": "integer",
+                        "title": "Transcription Attempts"
+                    },
+                    "transcription_error": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Transcription Error"
+                    },
+                    "transcription_model": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Transcription Model"
+                    },
+                    "transcript": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Transcript"
+                    },
+                    "transcript_segments": {
+                        "anyOf": [
+                            {
+                                "items": {
+                                    "additionalProperties": true,
+                                    "type": "object"
+                                },
+                                "type": "array"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Transcript Segments"
+                    },
+                    "transcribed_at": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "format": "date-time"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Transcribed At"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "id",
+                    "language",
+                    "mime_type",
+                    "size_bytes",
+                    "start_ms",
+                    "end_ms",
+                    "created_at",
+                    "transcription_status",
+                    "transcription_attempts",
+                    "transcription_error",
+                    "transcription_model",
+                    "transcript",
+                    "transcript_segments",
+                    "transcribed_at"
+                ],
+                "title": "VoiceCommentEntry"
             }
         },
         "securitySchemes": {

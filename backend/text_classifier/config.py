@@ -1,7 +1,10 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Config(BaseSettings):
+    # Env vars override values from .env (in the working directory; gitignored, keep secrets there).
+    model_config = SettingsConfigDict(env_file='.env', extra='ignore')
+
     DATABASE_URL: str = "sqlite+aiosqlite:///database.sqlite"
     PRODUCTION: bool = False
     PORT: int = 8003
@@ -13,6 +16,15 @@ class Config(BaseSettings):
     STATIC_PATH: str = "./static"
     # Seconds a served text stays soft-reserved for the user (see reservations.py)
     RESERVATION_TTL_SECONDS: int = 900
+    # Voice comments (see docs/voice_comments.md)
+    VOICE_COMMENTS_ENABLED: bool = True
+    VOICE_AUDIO_PATH: str = "./voice_audio"
+    VOICE_MAX_SECONDS: int = 300
+    VOICE_MAX_BYTES: int = 25 * 1024 * 1024  # OpenAI transcription upload limit
+    OPENAI_API_KEY: str = ""
+    OPENAI_TRANSCRIBE_MODEL: str = "gpt-4o-transcribe"
+    TRANSCRIBE_INTERVAL_SECONDS: int = 30
+    TRANSCRIBE_MAX_ATTEMPTS: int = 3
 
 
 config = Config()

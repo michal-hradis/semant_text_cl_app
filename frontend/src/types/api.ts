@@ -35,9 +35,73 @@ export interface TaskAnnotation {
   end_time: string;
 }
 
+/** One annotator action; t_ms is relative to AnnotationSessionSubmit.client_started_at. */
+export interface InteractionEvent {
+  type: string;
+  t_ms: number;
+  task_id?: string | null;
+  class_id?: string | null;
+}
+
+export interface AnnotationSessionSubmit {
+  id: string;
+  client_started_at: string;
+  events: InteractionEvent[];
+}
+
 export interface AnnotationSubmit {
   text_id: string;
   annotations: TaskAnnotation[];
+  session?: AnnotationSessionSubmit | null;
+}
+
+export interface VoiceCommentConfig {
+  enabled: boolean;
+  max_seconds: number;
+  languages: string[];
+}
+
+export interface VoiceCommentUpload {
+  session_id: string;
+  language: string;
+  start_ms: number;
+  end_ms: number;
+  audio: Blob;
+}
+
+export interface VoiceCommentCreated {
+  id: string;
+  transcription_status: string;
+}
+
+export interface VoiceCommentEntry {
+  id: string;
+  language: string;
+  mime_type: string;
+  size_bytes: number;
+  start_ms: number;
+  end_ms: number;
+  created_at: string;
+  transcription_status: 'pending' | 'done' | 'failed';
+  transcription_attempts: number;
+  transcription_error: string | null;
+  transcription_model: string | null;
+  transcript: string | null;
+  transcript_segments: { start: number; end: number; text: string }[] | null;
+  transcribed_at: string | null;
+}
+
+export interface AnnotationSessionEntry {
+  session_id: string;
+  user_id: string;
+  display_name: string;
+  text_id: string;
+  task_ids: string[];
+  client_started_at: string;
+  submitted_at: string;
+  events: InteractionEvent[];
+  annotations: TextAnnotationEntry[];
+  voice_comment: VoiceCommentEntry | null;
 }
 
 export interface UserRead {

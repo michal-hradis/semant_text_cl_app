@@ -17,6 +17,12 @@ Canonical terms for code, docs, logs and UI text. Where code and prose names dif
 | annotation | `Annotation` | One record: (annotator, text, task) → `selected_classes`. One submit creates one annotation per selected task. | label, answer, vote |
 | annotation type | `AnnotationType` | `user` (annotator), `ground_truth` (GT), `llm` (LLM output). | source, kind |
 | GT | `ground_truth` | Reference annotation uploaded or promoted by an admin. | gold, reference |
+| annotation session | `AnnotationSession`, `session_id` | One text shown to one annotator, from display to submit. Holds the interaction events and the annotations of that submit. | visit, attempt |
+| interaction event | `InteractionEvent`, `events[]` | One timestamped annotator action in an annotation session (`type`, `t_ms`, optional `task_id`, `class_id`). | action log, click |
+| session clock | `t_ms` | ms since the text was shown, on the client's monotonic clock. All event and recording times use it. | — |
+| voice comment | `VoiceComment` | The one audio recording of an annotator thinking aloud during an annotation session, plus its transcript. Never re-recorded or edited. | voice note, dictation |
+| transcript | `VoiceComment.transcript` | Text of a voice comment produced by the transcription job. | transcription (for the text) |
+| transcription status | `TranscriptionStatus` | `pending` / `done` / `failed`. | — |
 
 ## People
 

@@ -2,7 +2,7 @@
 
 ## Configuration
 
-`backend/text_classifier/config.py` (pydantic-settings; environment variables override the defaults).
+`backend/text_classifier/config.py` (pydantic-settings). Values come from environment variables, then from `.env` in the working directory (`backend/.env`, gitignored, mode 600; put secrets such as `OPENAI_API_KEY` there), then the defaults below.
 
 | Variable | Default | Notes |
 |---|---|---|
@@ -14,6 +14,13 @@
 | `ADMIN`, `ADMIN_PASSWORD` | `admin@example.com`, `admin123` | Superuser created at first start. |
 | `STATIC_PATH` | `./static` | If the directory exists, the backend serves the built SPA at `/`. |
 | `RESERVATION_TTL_SECONDS` | `900` | See [sampling_and_scoring.md](sampling_and_scoring.md). |
+| `VOICE_COMMENTS_ENABLED` | `true` | `false` hides the recording button and rejects uploads. |
+| `VOICE_AUDIO_PATH` | `./voice_audio` | Audio file directory; persist it (Docker volume) and back it up. |
+| `VOICE_MAX_SECONDS` | `300` | Maximum recording length per text. |
+| `VOICE_MAX_BYTES` | `26214400` | Upload limit (25 MB, the OpenAI limit). |
+| `OPENAI_API_KEY` | empty | Needed for transcription; without it voice comments stay `pending`. |
+| `OPENAI_TRANSCRIBE_MODEL` | `gpt-4o-transcribe` | `whisper-1` also returns segment timestamps. |
+| `TRANSCRIBE_INTERVAL_SECONDS`, `TRANSCRIBE_MAX_ATTEMPTS` | `30`, `3` | Transcription loop; see [voice_comments.md](voice_comments.md#transcription). |
 
 Frontend: `API_URL` at build/dev time (`quasar.config.js` `build.env`; fallback in `src/boot/axios.ts`).
 
@@ -29,7 +36,9 @@ Single-backend deployment: copy `frontend/dist/spa/*` to `backend/static/` and r
 
 Docker: `cd deploy && docker compose up --build` (backend `:8002`, frontend nginx `:9000`). Known issue: the backend image copies only `backend/`, so `prompts/` is missing and the prompt import fails inside the container.
 
-Run one worker only: reservations and the reliability loop live in process memory.
+Run one worker only: reservations, the reliability loop and the transcription loop live in process memory.
+
+Microphone recording requires the SPA to be served over HTTPS (or localhost).
 
 ## Backups
 
@@ -40,6 +49,8 @@ cd backend && sqlite3 database.sqlite ".backup db.bak/database.sqlite.before_<ch
 ```
 
 Naming: `db.bak/database.sqlite.before_<snake_case_change>_<YYYYMMDD>`. Back up before any manual DB edit, bulk task change or schema change.
+
+Voice comment audio lives outside the DB in `VOICE_AUDIO_PATH`; back up that directory together with the DB (for example `rsync -a voice_audio/ <backup>/voice_audio/`).
 
 ## Schema changes
 

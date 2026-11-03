@@ -18,6 +18,7 @@ The Admin page (`/admin`) is visible to superusers. Terms: [glossary.md](glossar
 
 - Upload JSONL (`id`, `text`, `language`, plus any extra fields, all kept in `raw_json`). Re-uploading an ID updates the text.
 - Search, page through texts, view a text's annotations, suspend or unsuspend.
+- In a text's annotations dialog, **Sessions & voice comments** shows each annotation session: annotations, voice comment audio (click **Load audio**), transcript and its status, and a timeline of the annotator's actions. Click a time in the Audio column to play from that moment. **Transcribe again** re-queues a transcription. See [voice_comments.md](voice_comments.md).
 
 ## Coverage tab
 

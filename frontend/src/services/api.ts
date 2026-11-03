@@ -1,8 +1,9 @@
 import { api } from 'boot/axios';
 import {
-  AnnotationSubmit, BearerResponse, GlobalStats, LeaderboardEntry, LoginRequest,
+  AnnotationSessionEntry, AnnotationSubmit, BearerResponse, GlobalStats, LeaderboardEntry, LoginRequest,
   MyStats, NextTextResponse, TaskCoverage, TaskDefinition, TextAnnotationEntry, TextListResponse,
   UserCreate, UserRead, UserReliabilityResponse,
+  VoiceCommentConfig, VoiceCommentCreated, VoiceCommentUpload,
 } from 'src/types/api';
 
 class ApiService {
@@ -119,6 +120,37 @@ class ApiService {
 
   async recomputeIrr(): Promise<void> {
     await api.post('/api/admin/irr/recompute');
+  }
+
+  async getVoiceCommentConfig(): Promise<VoiceCommentConfig> {
+    return (await api.get<VoiceCommentConfig>('/api/voice-comments/config')).data;
+  }
+
+  async uploadVoiceComment(upload: VoiceCommentUpload): Promise<VoiceCommentCreated> {
+    const form = new FormData();
+    form.append('session_id', upload.session_id);
+    form.append('language', upload.language);
+    form.append('start_ms', String(Math.round(upload.start_ms)));
+    form.append('end_ms', String(Math.round(upload.end_ms)));
+    const ext = upload.audio.type.includes('mp4') ? 'mp4' : upload.audio.type.includes('ogg') ? 'ogg' : 'webm';
+    form.append('audio', upload.audio, `recording.${ext}`);
+    // Explicit multipart type overrides the instance's JSON default; axios adds the boundary.
+    return (await api.post<VoiceCommentCreated>('/api/voice-comments', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })).data;
+  }
+
+  async getTextSessions(textId: string): Promise<AnnotationSessionEntry[]> {
+    return (await api.get<AnnotationSessionEntry[]>(`/api/admin/texts/${textId}/sessions`)).data;
+  }
+
+  /** Audio needs the bearer token, so it is fetched as a blob instead of using <audio src>. */
+  async getVoiceCommentAudio(voiceCommentId: string): Promise<Blob> {
+    return (await api.get<Blob>(`/api/admin/voice-comments/${voiceCommentId}/audio`, { responseType: 'blob' })).data;
+  }
+
+  async retranscribeVoiceComment(voiceCommentId: string): Promise<void> {
+    await api.post(`/api/admin/voice-comments/${voiceCommentId}/retranscribe`);
   }
 }
 

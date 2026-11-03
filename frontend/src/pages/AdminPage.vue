@@ -244,7 +244,16 @@
           <q-space />
           <q-btn flat round dense icon="close" @click="textAnnotationsDialog = false" />
         </q-card-section>
+        <q-tabs v-model="textDialogTab" dense align="left" class="text-primary" active-color="primary" indicator-color="primary">
+          <q-tab name="annotations" icon="list" label="Annotations" no-caps />
+          <q-tab name="sessions" icon="mic" label="Sessions & voice comments" no-caps />
+        </q-tabs>
+        <q-separator />
+        <div v-if="textDialogTab === 'sessions'" class="col scroll">
+          <AnnotationSessionsView :text-id="textAnnotationsTextId" :tasks="tasks" />
+        </div>
         <q-table
+          v-else
           class="col"
           :rows="textAnnotationRows"
           :columns="textAnnotationCols"
@@ -387,6 +396,7 @@ import { onMounted, ref, computed, watch } from 'vue';
 import { QTableColumn } from 'quasar';
 import { TaskCoverage, TaskDefinition, TextAnnotationEntry, TextItemResponse, UserReliabilityResponse } from 'src/types/api';
 import { apiService } from 'src/services/api';
+import AnnotationSessionsView from 'components/AnnotationSessionsView.vue';
 
 // ---- Tabs ----
 const tab = ref('tasks');
@@ -587,6 +597,7 @@ const textAnnotationCols: QTableColumn[] = [
 ];
 
 const textAnnotationsDialog = ref(false);
+const textDialogTab = ref<'annotations' | 'sessions'>('annotations');
 const textAnnotationsTextId = ref('');
 const textAnnotationRows = ref<TextAnnotationEntry[]>([]);
 const loadingTextAnnotations = ref(false);

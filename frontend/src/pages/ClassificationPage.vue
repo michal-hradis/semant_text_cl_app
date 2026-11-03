@@ -76,6 +76,33 @@
           Task {{ currentTaskIndex + 1 }} of {{ tasks.length }}
         </div>
         <q-space />
+        <!-- Voice comment: the only recording control (on/off + language) -->
+        <div v-if="voiceAvailable" class="row items-center no-wrap q-mr-md">
+          <q-btn
+            dense unelevated no-caps
+            class="q-px-sm"
+            :class="{ 'voice-live': voiceRecording }"
+            :outline="!voiceEnabled"
+            :color="voiceRecording ? 'negative' : (voiceEnabled ? 'primary' : 'grey-7')"
+            :icon="voiceRecording ? 'fiber_manual_record' : (voiceEnabled ? 'mic' : 'mic_off')"
+            :label="voiceLabel"
+            @click="toggleRecording"
+          >
+            <q-tooltip>{{ voiceTooltip }}</q-tooltip>
+          </q-btn>
+          <q-btn-dropdown dense flat no-caps size="sm" class="q-ml-xs" :label="voiceLanguage.toUpperCase()">
+            <q-list dense>
+              <q-item
+                v-for="lang in voiceLanguages" :key="lang"
+                v-close-popup clickable
+                :active="lang === voiceLanguage"
+                @click="voiceLanguage = lang"
+              >
+                <q-item-section>{{ LANGUAGE_NAMES[lang] ?? lang }}</q-item-section>
+              </q-item>
+            </q-list>
+          </q-btn-dropdown>
+        </div>
         <q-btn flat dense size="sm" icon="tune" label="Change tasks" @click="openTaskDialog" />
       </div>
 
@@ -105,7 +132,7 @@
           <div class="row items-center q-mb-xs">
             <div class="text-h6">{{ currentTask.name }}</div>
             <q-space />
-            <q-btn flat round dense size="sm" :icon="showDescription ? 'expand_less' : 'info_outline'" @click="showDescription = !showDescription">
+            <q-btn flat round dense size="sm" :icon="showDescription ? 'expand_less' : 'info_outline'" @click="toggleDescription">
               <q-tooltip>{{ showDescription ? 'Hide' : 'Show' }} task description</q-tooltip>
             </q-btn>
           </div>
@@ -128,18 +155,19 @@
           <div v-for="cls in currentTask.classes" :key="cls.id" class="row items-center no-wrap q-mb-xs">
             <q-radio
               v-if="!currentTask.multi_choice"
-              v-model="(answers as Record<string, string>)[currentTask.id]"
+              :model-value="(answers as Record<string, string>)[currentTask.id]"
               :val="cls.id"
               :label="cls.label_cs"
               dense
+              @update:model-value="(v: string) => onAnswerChange(currentTask!, v)"
             />
             <q-checkbox
               v-else
-              v-model="(answers as Record<string, string[]>)[currentTask.id]"
+              :model-value="(answers as Record<string, string[]>)[currentTask.id]"
               :val="cls.id"
               :label="cls.label_cs"
               dense
-              @update:model-value="limitMultiChoice(currentTask)"
+              @update:model-value="(v: string[]) => onAnswerChange(currentTask!, v)"
             />
             <q-btn
               v-if="cls.description"
@@ -203,15 +231,34 @@
         </q-card-section>
       </q-card>
     </div>
+
+    <!-- Voice recording consent (shown once per browser) -->
+    <q-dialog v-model="showVoiceConsent" persistent>
+      <q-card style="max-width: 480px">
+        <q-card-section class="text-h6">Voice recording</q-card-section>
+        <q-card-section class="q-pt-none text-body2">
+          <p>While recording is on, your microphone records what you say while annotating each text, so we can study how annotators decide. Please think aloud.</p>
+          <p>The audio is stored on our server and sent to OpenAI for transcription. Only administrators can listen to it or read the transcript.</p>
+          <p class="q-mb-none">You can turn recording off at any time. Turning it off discards the recording for the current text.</p>
+        </q-card-section>
+        <q-card-actions align="right">
+          <q-btn flat label="Cancel" v-close-popup />
+          <q-btn color="primary" label="I agree, start recording" @click="onVoiceConsent" />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
   </q-page>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { useQuasar } from 'quasar';
+import { v4 as uuidv4 } from 'uuid';
 import { apiService } from 'src/services/api';
-import { NextTextResponse, TaskDefinition } from 'src/types/api';
+import { InteractionEvent, NextTextResponse, TaskDefinition } from 'src/types/api';
 import TaskSelectionDialog from 'components/TaskSelectionDialog.vue';
 import MarkdownView from 'components/MarkdownView.vue';
+import { FinishedRecording, useVoiceRecorder } from 'src/composables/useVoiceRecorder';
 
 interface CalibItem {
   task_id: string;
@@ -235,6 +282,112 @@ const taskStartTimes = ref<Record<string, string>>({});
 const calibFeedback = ref<CalibItem[]>([]);
 
 const selectedTaskIds = ref<string[]>(JSON.parse(localStorage.getItem('selected_tasks') ?? '[]'));
+const $q = useQuasar();
+
+// ---- Annotation session: interaction events on a per-text clock (docs/voice_comments.md) ----
+const MAX_EVENTS = 5000; // matches backend MAX_SESSION_EVENTS
+const sessionId = ref('');
+let sessionPerfStart = 0;
+let sessionStartedAt = '';
+let sessionEvents: InteractionEvent[] = [];
+
+/** ms since the current text was shown (monotonic). */
+const sessionNow = () => Math.max(0, Math.round(performance.now() - sessionPerfStart));
+
+const logEvent = (type: string, extra: { task_id?: string; class_id?: string } = {}) => {
+  if (!sessionId.value || sessionEvents.length >= MAX_EVENTS) return;
+  sessionEvents.push({ type, t_ms: sessionNow(), ...extra });
+};
+
+const startSession = () => {
+  sessionId.value = uuidv4();
+  sessionPerfStart = performance.now();
+  sessionStartedAt = new Date().toISOString();
+  sessionEvents = [];
+  logEvent('text_shown');
+};
+
+const onVisibilityChange = () => logEvent(document.hidden ? 'page_hidden' : 'page_visible');
+
+// ---- Voice comment ----
+const LANGUAGE_NAMES: Record<string, string> = { cs: 'Čeština', sk: 'Slovenčina' };
+const voice = useVoiceRecorder({ now: sessionNow, onEvent: (type) => logEvent(type) });
+const {
+  available: voiceAvailable, enabled: voiceEnabled, recording: voiceRecording,
+  language: voiceLanguage, languages: voiceLanguages,
+} = voice;
+const showVoiceConsent = ref(false);
+// Recording finished at submit; kept if the submit fails so a retry still uploads it.
+let pendingRecording: FinishedRecording | null = null;
+
+const fmtDuration = (ms: number) => {
+  const s = Math.floor(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+};
+
+const voiceLabel = computed(() => {
+  if (voiceRecording.value) return `${fmtDuration(voice.elapsedMs.value)} / ${fmtDuration(voice.maxSeconds.value * 1000)}`;
+  if (!voiceEnabled.value) return 'Recording off';
+  return voice.capReached.value ? 'Max length reached' : 'Recording on';
+});
+
+const voiceTooltip = computed(() => {
+  if (voiceRecording.value) return 'Recording your comments for this text. Click to turn off (discards this recording).';
+  if (!voiceEnabled.value) return 'Click to record your thoughts while annotating.';
+  return voice.capReached.value
+    ? 'Maximum length reached; the recording is kept and uploaded on submit.'
+    : 'Recording is on; it starts with the next text.';
+});
+
+const notifyMicError = (err: unknown) => {
+  $q.notify({ type: 'negative', message: `Microphone not available: ${err instanceof Error ? err.message : String(err)}` });
+};
+
+const enableRecording = async () => {
+  try {
+    await voice.setEnabled(true);
+  } catch (err) {
+    notifyMicError(err);
+  }
+};
+
+const toggleRecording = async () => {
+  if (voiceEnabled.value) {
+    await voice.setEnabled(false);
+    pendingRecording = null;
+    return;
+  }
+  if (!voice.consented.value) {
+    showVoiceConsent.value = true;
+    return;
+  }
+  await enableRecording();
+};
+
+const onVoiceConsent = async () => {
+  voice.giveConsent();
+  showVoiceConsent.value = false;
+  await enableRecording();
+};
+
+const startRecordingForText = async () => {
+  try {
+    await voice.start();
+  } catch (err) {
+    await voice.setEnabled(false);
+    notifyMicError(err);
+  }
+};
+
+const uploadRecording = async (sid: string, rec: FinishedRecording, language: string) => {
+  try {
+    await apiService.uploadVoiceComment({
+      session_id: sid, language, start_ms: rec.startMs, end_ms: rec.endMs, audio: rec.blob,
+    });
+  } catch {
+    $q.notify({ type: 'warning', message: 'Voice comment upload failed; the annotation was saved.' });
+  }
+};
 const currentTask = computed(() => tasks.value[currentTaskIndex.value] ?? null);
 
 const selectedClasses = (task: TaskDefinition): string[] => {
@@ -255,6 +408,10 @@ const allAnswered = computed(() => tasks.value.every((t) => selectedClasses(t).l
 
 const load = async () => {
   loading.value = true;
+  // Any recording of a previous, unsubmitted text is dropped.
+  voice.resetForNewText();
+  pendingRecording = null;
+  sessionId.value = '';
   try {
     const ids = selectedTaskIds.value;
     if (ids.length === 0) { loading.value = false; return; }
@@ -271,6 +428,11 @@ const load = async () => {
     if (tasks.value[0]) {
       taskStartTimes.value[tasks.value[0].id] = new Date().toISOString();
     }
+    if (textItem.value) {
+      startSession();
+      if (tasks.value[0]) logEvent('task_shown', { task_id: tasks.value[0].id });
+      void startRecordingForText();
+    }
     const stats = await apiService.getMyStats();
     myTotal.value = stats.total;
   } finally {
@@ -279,12 +441,22 @@ const load = async () => {
 };
 
 onMounted(async () => {
+  document.addEventListener('visibilitychange', onVisibilityChange);
+  try {
+    voice.configure(await apiService.getVoiceCommentConfig());
+  } catch {
+    // Backend without voice comments: the recording button stays hidden.
+  }
   allTasks.value = await apiService.getTasks();
   if (selectedTaskIds.value.length === 0) {
     showTaskDialog.value = true;
   } else {
     await load();
   }
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener('visibilitychange', onVisibilityChange);
 });
 
 const openTaskDialog = () => { showTaskDialog.value = true; };
@@ -295,11 +467,20 @@ const onTasksConfirmed = async (ids: string[]) => {
   await load();
 };
 
-const limitMultiChoice = (task: TaskDefinition) => {
-  if (!task.multi_choice) return;
-  const selected = selectedClasses(task);
-  if (selected.length > task.max_choices) {
-    answers.value[task.id] = selected.slice(0, task.max_choices);
+const onAnswerChange = (task: TaskDefinition, value: string | string[]) => {
+  const before = selectedClasses(task);
+  answers.value[task.id] = task.multi_choice && Array.isArray(value) && value.length > task.max_choices
+    ? value.slice(0, task.max_choices)
+    : value;
+  const after = selectedClasses(task);
+  for (const c of after) if (!before.includes(c)) logEvent('class_selected', { task_id: task.id, class_id: c });
+  for (const c of before) if (!after.includes(c)) logEvent('class_deselected', { task_id: task.id, class_id: c });
+};
+
+const toggleDescription = () => {
+  showDescription.value = !showDescription.value;
+  if (currentTask.value) {
+    logEvent(showDescription.value ? 'description_shown' : 'description_hidden', { task_id: currentTask.value.id });
   }
 };
 
@@ -310,6 +491,7 @@ const goToTask = (index: number) => {
   if (task && !taskStartTimes.value[task.id]) {
     taskStartTimes.value[task.id] = new Date().toISOString();
   }
+  if (task) logEvent('task_shown', { task_id: task.id });
 };
 
 const nextTask = () => {
@@ -327,15 +509,27 @@ const submit = async () => {
   const submittedTextItem = textItem.value;
   const submittedAnswers = { ...answers.value };
   try {
-    await apiService.submitAnnotations({
-      text_id: submittedTextItem.id,
-      annotations: tasks.value.map((t) => ({
-        task_id: t.id,
-        selected_classes: selectedClasses(t),
-        start_time: taskStartTimes.value[t.id] || endTime,
-        end_time: endTime,
-      })),
-    });
+    if (!pendingRecording) pendingRecording = await voice.finish();
+    logEvent('submitted');
+    const sid = sessionId.value;
+    try {
+      await apiService.submitAnnotations({
+        text_id: submittedTextItem.id,
+        annotations: tasks.value.map((t) => ({
+          task_id: t.id,
+          selected_classes: selectedClasses(t),
+          start_time: taskStartTimes.value[t.id] || endTime,
+          end_time: endTime,
+        })),
+        session: sid ? { id: sid, client_started_at: sessionStartedAt, events: [...sessionEvents] } : null,
+      });
+    } catch (err) {
+      logEvent('submit_failed');
+      throw err;
+    }
+    const rec = pendingRecording;
+    pendingRecording = null;
+    if (rec && sid) void uploadRecording(sid, rec, voiceLanguage.value);
     // Show calibration feedback if needed
     const calibIds = submittedTextItem.calibration_task_ids ?? [];
     if (calibIds.length > 0) {
@@ -371,6 +565,15 @@ watch(allTasks, (val) => {
 </script>
 
 <style scoped>
+.voice-live {
+  animation: voice-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes voice-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(193, 0, 21, 0.55); }
+  50% { box-shadow: 0 0 0 6px rgba(193, 0, 21, 0); }
+}
+
 .classified-text {
   white-space: pre-wrap;
   overflow-wrap: anywhere;

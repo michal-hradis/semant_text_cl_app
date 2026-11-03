@@ -10,7 +10,7 @@ from fastapi_users.exceptions import UserAlreadyExists
 
 from text_classifier.base_objects import UserCreate, UserRead, UserUpdate
 from text_classifier.config import config
-from text_classifier.database import Base, engine, get_async_session
+from text_classifier.database import Base, async_session_maker, engine, get_async_session
 from text_classifier.routes import admin_route, api_route
 from text_classifier.users import auth_backend, fastapi_users, get_user_db, get_user_manager
 
@@ -57,8 +57,11 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
     await create_admin_user()
     task = asyncio.create_task(_reliability_loop())
+    from text_classifier.voice_comments import default_transcriber, transcription_loop
+    transcribe_task = asyncio.create_task(transcription_loop(async_session_maker, default_transcriber()))
     yield
     task.cancel()
+    transcribe_task.cancel()
 
 
 app = FastAPI(title="text-classifier", version="0.1.0", lifespan=lifespan)

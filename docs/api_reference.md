@@ -22,6 +22,8 @@ Auth: `Authorization: Bearer <JWT>` from `POST /auth/jwt/login`. "user" = any lo
 | `POST` | `/api/texts/next` | user | `{task_ids: [1–6]}` → `NextTextResponse`, or 204 if there is no active text. Reserves the text. |
 | `POST` | `/api/annotations` | user | `AnnotationSubmit` → `{points: {task_id: float}}`. Releases the reservation. 400 for an unknown or disabled task or invalid classes. |
 | `GET` | `/api/texts/{text_id}/ground-truth?task_ids=…` | user | `{task_id: [class_id]}` for GT annotations. |
+| `GET` | `/api/voice-comments/config` | user | `{enabled, max_seconds, languages}`. |
+| `POST` | `/api/voice-comments` | user | Multipart: `session_id`, `language`, `start_ms`, `end_ms`, `audio` (file) → 201 `{id, transcription_status}`. 404 unknown or other user's session, 409 already has a voice comment, 400/413/415 invalid; see [voice_comments.md](voice_comments.md#storage). |
 | `GET` | `/api/stats/me` | user | `{total, per_task, score, per_task_score}`. |
 | `GET` | `/api/stats/global` | none | `{total_annotations, per_task: [{task_id, task_name, count}]}`. |
 | `GET` | `/api/stats/leaderboard?since_days=N` | none | Top 20 `LeaderboardEntry`, all tasks. |
@@ -39,10 +41,13 @@ Auth: `Authorization: Bearer <JWT>` from `POST /auth/jwt/login`. "user" = any lo
 | `POST` | `/texts` | JSONL body (`text/plain`), rows `{id, text, language, …}` → `{imported}`. |
 | `GET` | `/texts?page=&q=&page_size=&task_id=` | Paginated list; `annotation_count` counts `user` annotations (for `task_id` if given). |
 | `GET` | `/texts/{text_id}/annotations?task_id=` | All annotations of a text, all types. |
+| `GET` | `/texts/{text_id}/sessions` | `AnnotationSessionEntry` list: sessions of a text with events, annotations and voice comment. |
 | `PATCH` | `/texts/{text_id}` | `{suspended: bool}`. |
 | `POST` | `/ground-truth` | JSONL `{text_id, task_id, selected_classes}` → GT annotations. |
 | `POST` | `/llm-annotations` | Same format → LLM annotations. |
 | `PATCH` | `/annotations/{annotation_id}` | `{annotation_type: "ground_truth" \| "llm"}`. |
+| `GET` | `/voice-comments/{id}/audio` | The audio file. |
+| `POST` | `/voice-comments/{id}/retranscribe` | Reset to `pending` with 0 attempts → 204. |
 | `GET` | `/coverage` | `TaskCoverage` per enabled task. |
 | `GET` | `/irr` | All `UserReliability` rows. |
 | `POST` | `/irr/recompute` | Run the reliability job now. |
@@ -57,8 +62,17 @@ Auth: `Authorization: Bearer <JWT>` from `POST /auth/jwt/login`. "user" = any lo
 ```json
 {"text_id": "t1", "annotations": [
   {"task_id": "style", "selected_classes": ["formal"],
-   "start_time": "2026-05-30T12:00:00Z", "end_time": "2026-05-30T12:00:10Z"}]}
+   "start_time": "2026-05-30T12:00:00Z", "end_time": "2026-05-30T12:00:10Z"}],
+ "session": {"id": "6f1c…", "client_started_at": "2026-05-30T11:59:58Z",
+   "events": [{"type": "text_shown", "t_ms": 0},
+              {"type": "class_selected", "t_ms": 8120, "task_id": "style", "class_id": "formal"}]}}
 ```
+
+`session` is optional; at most 5000 events. A repeated session ID → 400. Event types: [voice_comments.md](voice_comments.md#annotation-session).
+
+`AnnotationSessionEntry`: `{session_id, user_id, display_name, text_id, task_ids, client_started_at, submitted_at, events, annotations: [TextAnnotationEntry], voice_comment: VoiceCommentEntry | null}`.
+
+`VoiceCommentEntry`: `{id, language, mime_type, size_bytes, start_ms, end_ms, created_at, transcription_status, transcription_attempts, transcription_error, transcription_model, transcript, transcript_segments, transcribed_at}`.
 
 `LeaderboardEntry`: `{user_id, display_name, count, score, reliability}`; `reliability` = `pairwise_agreement` (mean over tasks for the overall board), `null` before the first job run.
 

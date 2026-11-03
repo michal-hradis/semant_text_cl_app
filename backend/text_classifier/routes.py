@@ -6,13 +6,15 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, Response, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from text_classifier import base_objects, crud
+from text_classifier import base_objects, crud, voice_comments
+from text_classifier.config import config
 from text_classifier.database import User, get_async_session
-from text_classifier.db_model import AnnotationType, Task
+from text_classifier.db_model import AnnotationType, Task, VoiceComment
 from text_classifier.users import current_active_user
 from text_classifier.prompt_parser import load_prompts
 from text_classifier.reservations import reservations
@@ -300,3 +302,84 @@ async def admin_recompute_irr(
     await run_reliability_job(db)
     await db.commit()
     return {'status': 'ok'}
+
+
+# ---------------------------------------------------------------------------
+# Voice comments
+# ---------------------------------------------------------------------------
+
+@api_route.get('/voice-comments/config', response_model=base_objects.VoiceCommentConfig)
+async def voice_comment_config(user: User = Depends(current_active_user)):
+    return {
+        'enabled': config.VOICE_COMMENTS_ENABLED,
+        'max_seconds': config.VOICE_MAX_SECONDS,
+        'languages': voice_comments.VOICE_LANGUAGES,
+    }
+
+
+@api_route.post('/voice-comments', response_model=base_objects.VoiceCommentCreated, status_code=201)
+async def upload_voice_comment(
+    session_id: uuid.UUID = Form(...),
+    language: str = Form(...),
+    start_ms: int = Form(...),
+    end_ms: int = Form(...),
+    audio: UploadFile = File(...),
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_async_session),
+):
+    if not config.VOICE_COMMENTS_ENABLED:
+        raise HTTPException(status_code=403, detail='Voice comments are disabled')
+    data = await audio.read(config.VOICE_MAX_BYTES + 1)
+    try:
+        vc = await voice_comments.create_voice_comment(
+            db, user.id, session_id, language, start_ms, end_ms,
+            audio.content_type or '', data,
+        )
+    except voice_comments.VoiceCommentError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
+    await db.commit()
+    voice_comments.transcription_wakeup.set()
+    return {'id': str(vc.id), 'transcription_status': vc.transcription_status.value}
+
+
+@admin_route.get('/texts/{text_id}/sessions', response_model=list[base_objects.AnnotationSessionEntry])
+async def admin_get_text_sessions(
+    text_id: str,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_async_session),
+):
+    if not user.is_superuser:
+        raise HTTPException(status_code=403)
+    return await crud.get_text_sessions(db, text_id)
+
+
+@admin_route.get('/voice-comments/{voice_comment_id}/audio')
+async def admin_get_voice_audio(
+    voice_comment_id: uuid.UUID,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_async_session),
+):
+    if not user.is_superuser:
+        raise HTTPException(status_code=403)
+    vc = await db.get(VoiceComment, voice_comment_id)
+    if vc is None:
+        raise HTTPException(status_code=404)
+    path = voice_comments.audio_file(vc)
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail='Audio file missing')
+    return FileResponse(path, media_type=vc.mime_type)
+
+
+@admin_route.post('/voice-comments/{voice_comment_id}/retranscribe', status_code=204)
+async def admin_retranscribe_voice_comment(
+    voice_comment_id: uuid.UUID,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_async_session),
+):
+    if not user.is_superuser:
+        raise HTTPException(status_code=403)
+    if not await voice_comments.reset_transcription(db, voice_comment_id):
+        raise HTTPException(status_code=404)
+    await db.commit()
+    voice_comments.transcription_wakeup.set()
+    return Response(status_code=204)

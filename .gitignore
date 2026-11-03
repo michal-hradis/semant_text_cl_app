@@ -11,6 +11,9 @@ venv/
 *.db
 backend/db.bak/
 
+# Voice comment audio (VOICE_AUDIO_PATH)
+backend/voice_audio/
+
 # Built frontend served by the backend
 backend/static/
 

@@ -4,7 +4,7 @@ import math
 import random
 import uuid
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Sequence
 
 from sqlalchemy import func, select, delete
@@ -12,7 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from text_classifier import base_objects
 from text_classifier.database import User
-from text_classifier.db_model import Annotation, AnnotationType, Task, TextItem, UserReliability
+from text_classifier.db_model import (
+    Annotation, AnnotationSession, AnnotationType, Task, TextItem, UserReliability, VoiceComment,
+)
 from text_classifier.reservations import ReservationStore, reservations
 
 import logging
@@ -449,6 +451,7 @@ async def save_annotations(
     annotation_type: AnnotationType = AnnotationType.user,
 ) -> dict[str, float]:
     points: dict[str, float] = {}
+    annotation_ids: list[str] = []
     for ann in payload.annotations:
         task = tasks_map[ann.task_id]
         selected = ann.selected_classes
@@ -469,7 +472,8 @@ async def save_annotations(
             pts = await _compute_points(db, user_id, payload.text_id, task, selected)
             points[ann.task_id] = pts
 
-        db.add(Annotation(
+        row = Annotation(
+            id=uuid.uuid4(),
             user_id=user_id,
             text_id=payload.text_id,
             task_id=ann.task_id,
@@ -478,8 +482,37 @@ async def save_annotations(
             end_time=ann.end_time,
             annotation_type=annotation_type,
             points_earned=pts,
-        ))
+        )
+        db.add(row)
+        annotation_ids.append(str(row.id))
+
+    if payload.session is not None:
+        await _save_annotation_session(db, user_id, payload, annotation_ids)
     return points
+
+
+async def _save_annotation_session(
+    db: AsyncSession, user_id, payload: base_objects.AnnotationSubmit, annotation_ids: list[str],
+) -> None:
+    session = payload.session
+    if await db.get(AnnotationSession, session.id) is not None:
+        raise ValueError(f"Annotation session {session.id} was already submitted")
+    db.add(AnnotationSession(
+        id=session.id,
+        user_id=user_id,
+        text_id=payload.text_id,
+        task_ids=[a.task_id for a in payload.annotations],
+        annotation_ids=annotation_ids,
+        client_started_at=_naive_utc(session.client_started_at),
+        events=[e.model_dump(exclude_none=True) for e in session.events],
+    ))
+
+
+def _naive_utc(dt: datetime) -> datetime:
+    """Store datetimes as naive UTC, like the rest of the DB."""
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
 
 
 async def bulk_upsert_annotations(
@@ -669,6 +702,68 @@ async def get_text_annotations(
         }
         for ann, dn in rows
     ]
+
+
+async def get_text_sessions(db: AsyncSession, text_id: str) -> list[dict]:
+    """Annotation sessions of a text with their annotations and voice comment (admin view)."""
+    rows = (await db.execute(
+        select(AnnotationSession, User.display_name, VoiceComment)
+        .outerjoin(User, User.id == AnnotationSession.user_id)
+        .outerjoin(VoiceComment, VoiceComment.session_id == AnnotationSession.id)
+        .where(AnnotationSession.text_id == text_id)
+        .order_by(AnnotationSession.submitted_at)
+    )).all()
+    ann_ids = [uuid.UUID(a) for s, _, _ in rows for a in s.annotation_ids]
+    anns: dict[str, Annotation] = {}
+    if ann_ids:
+        anns = {str(a.id): a for a in (await db.execute(select(Annotation).where(Annotation.id.in_(ann_ids)))).scalars()}
+    result = []
+    for s, dn, vc in rows:
+        name = _display_name(dn, s.user_id)
+        result.append({
+            "session_id": str(s.id),
+            "user_id": str(s.user_id),
+            "display_name": name,
+            "text_id": s.text_id,
+            "task_ids": s.task_ids,
+            "client_started_at": s.client_started_at,
+            "submitted_at": s.submitted_at,
+            "events": s.events,
+            "annotations": [
+                {
+                    "annotation_id": str(a.id),
+                    "user_id": str(a.user_id),
+                    "display_name": name,
+                    "task_id": a.task_id,
+                    "selected_classes": a.selected_classes,
+                    "annotation_type": a.annotation_type.value,
+                    "created_at": a.created_at.isoformat() if a.created_at else None,
+                    "points_earned": float(a.points_earned) if a.points_earned is not None else None,
+                }
+                for a in (anns.get(i) for i in s.annotation_ids) if a is not None
+            ],
+            "voice_comment": voice_comment_entry(vc) if vc is not None else None,
+        })
+    return result
+
+
+def voice_comment_entry(vc: VoiceComment) -> dict:
+    return {
+        "id": str(vc.id),
+        "language": vc.language,
+        "mime_type": vc.mime_type,
+        "size_bytes": vc.size_bytes,
+        "start_ms": vc.start_ms,
+        "end_ms": vc.end_ms,
+        "created_at": vc.created_at,
+        "transcription_status": vc.transcription_status.value,
+        "transcription_attempts": vc.transcription_attempts,
+        "transcription_error": vc.transcription_error,
+        "transcription_model": vc.transcription_model,
+        "transcript": vc.transcript,
+        "transcript_segments": vc.transcript_segments,
+        "transcribed_at": vc.transcribed_at,
+    }
 
 
 # ---------------------------------------------------------------------------

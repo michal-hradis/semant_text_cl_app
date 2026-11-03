@@ -10,6 +10,7 @@ Docs describe the current state of the app. `logs/` records individual changes. 
 | [data_model.md](data_model.md) | Tables, invariants, schema changes. |
 | [task_definitions.md](task_definitions.md) | Editing tasks, labels and prompts; prompt import. |
 | [sampling_and_scoring.md](sampling_and_scoring.md) | Sampler, reservations, points, reliability, calibration status. |
+| [voice_comments.md](voice_comments.md) | Annotation sessions, interaction events, voice comment recording, storage and transcription. |
 | [api_reference.md](api_reference.md) | Endpoints and payloads. |
 | [operations.md](operations.md) | Config, running, deploy, backups, scripts, tests. |
 | [admin_guide.md](admin_guide.md) | Using the Admin page. |
