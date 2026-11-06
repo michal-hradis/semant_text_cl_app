@@ -36,6 +36,8 @@ Single-backend deployment: copy `frontend/dist/spa/*` to `backend/static/` and r
 
 Docker: `cd deploy && docker compose up --build` (backend `:8002`, frontend nginx `:9000`). Known issue: the backend image copies only `backend/`, so `prompts/` is missing and the prompt import fails inside the container.
 
+Production (pchradis2.fit.vutbr.cz): a single container built from a git tag, behind Traefik at `https://pchradis2.fit.vutbr.cz/`. The deployment root is `~/projects/2026-09-21_potato/deploy/text_classification/` on that host (not in this repo). It contains the Dockerfile, `docker-compose.yml`, `.deploy/.env` (secrets) and `state/` (`database.sqlite`, `voice_audio/`). Its `README.md` covers releasing a new tag, backups and password resets.
+
 Run one worker only: reservations, the reliability loop and the transcription loop live in process memory.
 
 Microphone recording requires the SPA to be served over HTTPS (or localhost).
