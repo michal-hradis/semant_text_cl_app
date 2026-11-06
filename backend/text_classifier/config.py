@@ -21,6 +21,8 @@ class Config(BaseSettings):
     VOICE_AUDIO_PATH: str = "./voice_audio"
     VOICE_MAX_SECONDS: int = 300
     VOICE_MAX_BYTES: int = 25 * 1024 * 1024  # OpenAI transcription upload limit
+    # Off until recordings are validated; audio is stored and stays `pending`.
+    TRANSCRIBE_ENABLED: bool = False
     OPENAI_API_KEY: str = ""
     OPENAI_TRANSCRIBE_MODEL: str = "gpt-4o-transcribe"
     TRANSCRIBE_INTERVAL_SECONDS: int = 30

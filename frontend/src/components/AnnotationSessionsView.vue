@@ -35,7 +35,8 @@
                 v-if="audioUrls[s.voice_comment.id]"
                 :ref="(el) => setAudioEl(s.voice_comment!.id, el)"
                 :src="audioUrls[s.voice_comment.id]"
-                controls preload="metadata" style="width: 100%; max-width: 520px"
+                controls preload="auto" style="width: 100%; max-width: 520px"
+                @loadedmetadata="fixDuration"
               />
               <q-btn
                 v-else dense outline color="primary" icon="play_arrow" label="Load audio"
@@ -196,6 +197,24 @@ const loadAudio = async (vcId: string) => {
   }
 };
 
+/**
+ * Browser MediaRecorder WebM has no duration or seek index, so the player shows no
+ * length and seeking jumps to wrong places. Seeking far past the end once makes the
+ * browser scan the file and learn the real duration; after that seeking is exact.
+ */
+const fixDuration = (ev: Event) => {
+  const el = ev.target as HTMLAudioElement;
+  if (Number.isFinite(el.duration)) return;
+  const restore = () => {
+    el.removeEventListener('durationchange', restore);
+    el.currentTime = pendingSeek.get(el) ?? 0;
+    pendingSeek.delete(el);
+  };
+  el.addEventListener('durationchange', restore);
+  el.currentTime = 1e101;
+};
+const pendingSeek = new WeakMap<HTMLAudioElement, number>();
+
 const setAudioEl = (vcId: string, el: unknown) => {
   if (el instanceof HTMLAudioElement) audioEls[vcId] = el;
 };
@@ -206,7 +225,9 @@ const seek = async (vcId: string, audioMs: number) => {
   setTimeout(() => {
     const el = audioEls[vcId];
     if (!el) return;
-    el.currentTime = audioMs / 1000;
+    // Until fixDuration has run, remember the target; it is applied once the length is known.
+    if (Number.isFinite(el.duration)) el.currentTime = audioMs / 1000;
+    else pendingSeek.set(el, audioMs / 1000);
     void el.play();
   }, 0);
 };

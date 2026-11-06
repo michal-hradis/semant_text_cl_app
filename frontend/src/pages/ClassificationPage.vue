@@ -238,7 +238,7 @@
         <q-card-section class="text-h6">Voice recording</q-card-section>
         <q-card-section class="q-pt-none text-body2">
           <p>While recording is on, your microphone records what you say while annotating each text, so we can study how annotators decide. Please think aloud.</p>
-          <p>The audio is stored on our server and sent to OpenAI for transcription. Only administrators can listen to it or read the transcript.</p>
+          <p>The audio is stored on our server and may later be sent to OpenAI for transcription. Only administrators can listen to it or read the transcript.</p>
           <p class="q-mb-none">You can turn recording off at any time. Turning it off discards the recording for the current text.</p>
         </q-card-section>
         <q-card-actions align="right">

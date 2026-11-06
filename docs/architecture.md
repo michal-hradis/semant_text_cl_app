@@ -19,7 +19,7 @@ flowchart LR
 - Backend: FastAPI, async SQLAlchemy, fastapi-users (JWT). One process; reservations and the reliability loop are in memory.
 - Frontend: Quasar (Vue 3, `<script setup>`), Axios through `src/services/api.ts`.
 - Optional: the backend serves the built SPA from `STATIC_PATH`.
-- Voice comments: audio files on disk, metadata and transcripts in the DB, transcription in a background loop. See [voice_comments.md](voice_comments.md).
+- Voice comments: audio files on disk, metadata and transcripts in the DB, transcription in a background loop (off by default, `TRANSCRIBE_ENABLED`). See [voice_comments.md](voice_comments.md).
 
 Module map: [code_map.md](code_map.md). Tables: [data_model.md](data_model.md).
 

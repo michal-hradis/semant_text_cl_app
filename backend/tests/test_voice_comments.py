@@ -350,3 +350,11 @@ def test_upload_and_admin_routes(audio_dir):
             assert (await client.post(f'/api/admin/voice-comments/{uuid4()}/retranscribe')).status_code == 404
 
     _run(check)
+
+
+def test_transcription_is_off_by_default(monkeypatch):
+    monkeypatch.setattr(config, 'OPENAI_API_KEY', 'sk-test')
+    monkeypatch.setattr(config, 'TRANSCRIBE_ENABLED', False)
+    assert voice_comments.default_transcriber() is None
+    # The loop returns at once instead of polling.
+    asyncio.run(asyncio.wait_for(voice_comments.transcription_loop(None, None), timeout=1))

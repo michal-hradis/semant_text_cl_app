@@ -189,7 +189,8 @@ class OpenAITranscriber:
 
 
 def default_transcriber() -> Transcriber | None:
-    if not config.OPENAI_API_KEY:
+    """The configured transcriber, or None when transcription is off or has no API key."""
+    if not config.TRANSCRIBE_ENABLED or not config.OPENAI_API_KEY:
         return None
     return OpenAITranscriber(config.OPENAI_API_KEY, config.OPENAI_TRANSCRIBE_MODEL)
 
@@ -247,7 +248,7 @@ transcription_wakeup = asyncio.Event()
 async def transcription_loop(session_maker, transcriber: Transcriber | None) -> None:
     """Background loop: transcribe pending voice comments (single worker)."""
     if transcriber is None:
-        logger.warning('[transcription] OPENAI_API_KEY not set; voice comments stay pending')
+        logger.warning('[transcription] disabled (TRANSCRIBE_ENABLED=false or no OPENAI_API_KEY); voice comments stay pending')
         return
     while True:
         try:

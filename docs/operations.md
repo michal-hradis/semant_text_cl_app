@@ -18,6 +18,7 @@
 | `VOICE_AUDIO_PATH` | `./voice_audio` | Audio file directory; persist it (Docker volume) and back it up. |
 | `VOICE_MAX_SECONDS` | `300` | Maximum recording length per text. |
 | `VOICE_MAX_BYTES` | `26214400` | Upload limit (25 MB, the OpenAI limit). |
+| `TRANSCRIBE_ENABLED` | `false` | Turn on OpenAI transcription of voice comments; off, audio is only stored and stays `pending`. |
 | `OPENAI_API_KEY` | empty | Needed for transcription; without it voice comments stay `pending`. |
 | `OPENAI_TRANSCRIBE_MODEL` | `gpt-4o-transcribe` | `whisper-1` also returns segment timestamps. |
 | `TRANSCRIBE_INTERVAL_SECONDS`, `TRANSCRIBE_MAX_ATTEMPTS` | `30`, `3` | Transcription loop; see [voice_comments.md](voice_comments.md#transcription). |

@@ -32,6 +32,16 @@ const writeLs = (key: string, value: string) => {
   try { localStorage.setItem(key, value); } catch { /* ignore */ }
 };
 
+// Raw microphone signal. The browser defaults (noise suppression, echo cancellation,
+// auto gain) are tuned for calls: they gate quiet speech and pump the level, which
+// made think-aloud recordings drop in and out.
+const AUDIO_CONSTRAINTS: MediaTrackConstraints = {
+  echoCancellation: false,
+  noiseSuppression: false,
+  autoGainControl: false,
+  channelCount: 1,
+};
+
 const pickMimeType = (): string => {
   const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'];
   return candidates.find((t) => MediaRecorder.isTypeSupported(t)) ?? '';
@@ -106,7 +116,7 @@ export function useVoiceRecorder({ now, onEvent }: Options) {
     if (recorder || discardedThisText) return;
     const gen = generation;
     if (!stream) {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream = await navigator.mediaDevices.getUserMedia({ audio: AUDIO_CONSTRAINTS });
     }
     if (gen !== generation || !enabled.value || recorder) return;
 
@@ -129,7 +139,8 @@ export function useVoiceRecorder({ now, onEvent }: Options) {
         void stopCapture('recording_max_reached');
       }, maxSeconds.value * 1000);
     };
-    rec.start(1000);
+    // No timeslice: the recorder emits the whole recording as one blob at stop().
+    rec.start();
   };
 
   /** Stop and return this text's recording (null if none). Call at submit. */
